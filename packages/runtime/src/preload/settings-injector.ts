@@ -179,6 +179,8 @@ interface InjectorState {
   /** Our "Codex++" nav group (Config/Tweaks). */
   navGroup: HTMLElement | null;
   navButtons: { config: HTMLButtonElement; tweaks: HTMLButtonElement; store: HTMLButtonElement } | null;
+  /** Sidebar update pill shown only when GitHub has a newer Codex++ release. */
+  codexPlusPlusUpdateButton: HTMLButtonElement | null;
   /** Our "Tweaks" nav group (per-tweak pages). Created lazily. */
   pagesGroup: HTMLElement | null;
   pagesGroupKey: string | null;
@@ -204,6 +206,7 @@ const state: InjectorState = {
   nativeNavHeader: null,
   navGroup: null,
   navButtons: null,
+  codexPlusPlusUpdateButton: null,
   pagesGroup: null,
   pagesGroupKey: null,
   panelHost: null,
@@ -426,8 +429,12 @@ function tryInject(): void {
 
   if (existingCodexPpNavGroup) {
     state.navGroup = existingCodexPpNavGroup;
+    state.codexPlusPlusUpdateButton = existingCodexPpNavGroup.querySelector<HTMLButtonElement>(
+      "[data-codexpp-sidebar-update]",
+    );
     state.sidebarRoot = outer;
     syncPagesGroup();
+    refreshSidebarCodexPlusPlusUpdateButton();
     if (state.activePage !== null) syncCodexNativeNavActive(true);
     return;
   }
@@ -437,7 +444,10 @@ function tryInject(): void {
   group.dataset.codexpp = "nav-group";
   group.className = "flex flex-col gap-px";
 
-  group.appendChild(sidebarGroupHeader("Codex++", "pt-3", sidebarReleasesPillButton()));
+  const updateButton = sidebarUpdatePillButton();
+  state.codexPlusPlusUpdateButton = updateButton;
+  group.appendChild(sidebarGroupHeader("Codex++", "pt-3", updateButton));
+  refreshSidebarCodexPlusPlusUpdateButton();
 
   // ── Sidebar items ────────────────────────────────────────────────────
   const configBtn = makeSidebarItem("Config", configIconSvg());
@@ -1000,6 +1010,7 @@ function renderConfigPage(
 }
 
 function renderCodexPlusPlusConfig(card: HTMLElement, config: CodexPlusPlusConfig): void {
+  setSidebarCodexPlusPlusUpdateButton(config.updateCheck);
   card.appendChild(autoUpdateRow(config));
   card.appendChild(updateChannelRow(config));
   card.appendChild(installationSourceRow(config.installationSource));
@@ -1116,7 +1127,10 @@ function checkForUpdatesRow(config: CodexPlusPlusConfig): HTMLElement {
       row.style.opacity = "0.65";
       void ipcRenderer
         .invoke("codexpp:check-codexpp-update", true)
-        .then(() => refreshConfigCard(row))
+        .then((check) => {
+          setSidebarCodexPlusPlusUpdateButton(check as CodexPlusPlusUpdateCheck);
+          refreshConfigCard(row);
+        })
         .catch((e) => plog("Codex++ release check failed", String(e)))
         .finally(() => {
           row.style.opacity = "";
@@ -1130,7 +1144,10 @@ function checkForUpdatesRow(config: CodexPlusPlusConfig): HTMLElement {
       buttons.forEach((button) => (button.disabled = true));
       void ipcRenderer
         .invoke("codexpp:run-codexpp-update")
-        .then(() => refreshConfigCard(row))
+        .then(() => {
+          refreshSidebarCodexPlusPlusUpdateButton(true);
+          refreshConfigCard(row);
+        })
         .catch((e) => {
           plog("Codex++ self-update failed", String(e));
           void refreshConfigCard(row);
@@ -1892,12 +1909,14 @@ function storeEntryIconUrl(entry: TweakStoreEntryView): string | null {
   return `https://raw.githubusercontent.com/${entry.repo}/${entry.approvedCommitSha}/${rel}`;
 }
 
-function sidebarReleasesPillButton(): HTMLButtonElement {
+function sidebarUpdatePillButton(): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
+  btn.dataset.codexppSidebarUpdate = "true";
   btn.className =
     "user-select-none no-drag cursor-interaction inline-flex shrink-0 items-center justify-center whitespace-nowrap";
   Object.assign(btn.style, {
+    display: "none",
     height: "20px",
     borderRadius: "9999px",
     border: "0",
@@ -1911,8 +1930,8 @@ function sidebarReleasesPillButton(): HTMLButtonElement {
     textTransform: "none",
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.18)",
   });
-  btn.textContent = "Releases";
-  btn.title = "Open Codex++ releases";
+  btn.textContent = "Update";
+  btn.title = "Open Codex++ update";
   btn.addEventListener("mouseenter", () => {
     btn.style.background = "#0071E3";
   });
@@ -1922,9 +1941,34 @@ function sidebarReleasesPillButton(): HTMLButtonElement {
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void ipcRenderer.invoke("codexpp:open-external", CODEX_PLUSPLUS_RELEASES_URL);
+    void ipcRenderer.invoke("codexpp:open-external", btn.dataset.codexppReleaseUrl || CODEX_PLUSPLUS_RELEASES_URL);
   });
   return btn;
+}
+
+function refreshSidebarCodexPlusPlusUpdateButton(force = false): void {
+  const btn = state.codexPlusPlusUpdateButton;
+  if (!btn) return;
+  void ipcRenderer
+    .invoke("codexpp:check-codexpp-update", force)
+    .then((check) => setSidebarCodexPlusPlusUpdateButton(check as CodexPlusPlusUpdateCheck))
+    .catch((e) => {
+      plog("Codex++ sidebar release check failed", String(e));
+      setSidebarCodexPlusPlusUpdateButton(null);
+    });
+}
+
+function setSidebarCodexPlusPlusUpdateButton(check: CodexPlusPlusUpdateCheck | null): void {
+  const btn = state.codexPlusPlusUpdateButton;
+  if (!btn) return;
+  const updateAvailable = check?.updateAvailable === true;
+  btn.style.display = updateAvailable ? "inline-flex" : "none";
+  btn.hidden = !updateAvailable;
+  btn.dataset.codexppReleaseUrl = check?.releaseUrl || CODEX_PLUSPLUS_RELEASES_URL;
+  btn.title =
+    updateAvailable && check?.latestVersion
+      ? `Open Codex++ ${check.latestVersion} update`
+      : "Open Codex++ update";
 }
 
 function updateStoreUpdateBadge(count: number | null): void {

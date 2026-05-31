@@ -39,6 +39,7 @@ const state = {
     nativeNavHeader: null,
     navGroup: null,
     navButtons: null,
+    codexPlusPlusUpdateButton: null,
     pagesGroup: null,
     pagesGroupKey: null,
     panelHost: null,
@@ -244,8 +245,10 @@ function tryInject() {
         outer.querySelector('[data-codexpp="nav-group"]');
     if (existingCodexPpNavGroup) {
         state.navGroup = existingCodexPpNavGroup;
+        state.codexPlusPlusUpdateButton = existingCodexPpNavGroup.querySelector("[data-codexpp-sidebar-update]");
         state.sidebarRoot = outer;
         syncPagesGroup();
+        refreshSidebarCodexPlusPlusUpdateButton();
         if (state.activePage !== null)
             syncCodexNativeNavActive(true);
         return;
@@ -254,7 +257,10 @@ function tryInject() {
     const group = document.createElement("div");
     group.dataset.codexpp = "nav-group";
     group.className = "flex flex-col gap-px";
-    group.appendChild(sidebarGroupHeader("Codex++", "pt-3", sidebarReleasesPillButton()));
+    const updateButton = sidebarUpdatePillButton();
+    state.codexPlusPlusUpdateButton = updateButton;
+    group.appendChild(sidebarGroupHeader("Codex++", "pt-3", updateButton));
+    refreshSidebarCodexPlusPlusUpdateButton();
     // ── Sidebar items ────────────────────────────────────────────────────
     const configBtn = makeSidebarItem("Config", configIconSvg());
     const tweaksBtn = makeSidebarItem("Tweaks", tweaksIconSvg());
@@ -792,6 +798,7 @@ function renderConfigPage(sectionsWrap, subtitle) {
     sectionsWrap.appendChild(maintenance);
 }
 function renderCodexPlusPlusConfig(card, config) {
+    setSidebarCodexPlusPlusUpdateButton(config.updateCheck);
     card.appendChild(autoUpdateRow(config));
     card.appendChild(updateChannelRow(config));
     card.appendChild(installationSourceRow(config.installationSource));
@@ -899,7 +906,10 @@ function checkForUpdatesRow(config) {
         row.style.opacity = "0.65";
         void electron_1.ipcRenderer
             .invoke("codexpp:check-codexpp-update", true)
-            .then(() => refreshConfigCard(row))
+            .then((check) => {
+            setSidebarCodexPlusPlusUpdateButton(check);
+            refreshConfigCard(row);
+        })
             .catch((e) => plog("Codex++ release check failed", String(e)))
             .finally(() => {
             row.style.opacity = "";
@@ -911,7 +921,10 @@ function checkForUpdatesRow(config) {
         buttons.forEach((button) => (button.disabled = true));
         void electron_1.ipcRenderer
             .invoke("codexpp:run-codexpp-update")
-            .then(() => refreshConfigCard(row))
+            .then(() => {
+            refreshSidebarCodexPlusPlusUpdateButton(true);
+            refreshConfigCard(row);
+        })
             .catch((e) => {
             plog("Codex++ self-update failed", String(e));
             void refreshConfigCard(row);
@@ -1620,12 +1633,14 @@ function storeEntryIconUrl(entry) {
         return null;
     return `https://raw.githubusercontent.com/${entry.repo}/${entry.approvedCommitSha}/${rel}`;
 }
-function sidebarReleasesPillButton() {
+function sidebarUpdatePillButton() {
     const btn = document.createElement("button");
     btn.type = "button";
+    btn.dataset.codexppSidebarUpdate = "true";
     btn.className =
         "user-select-none no-drag cursor-interaction inline-flex shrink-0 items-center justify-center whitespace-nowrap";
     Object.assign(btn.style, {
+        display: "none",
         height: "20px",
         borderRadius: "9999px",
         border: "0",
@@ -1639,8 +1654,8 @@ function sidebarReleasesPillButton() {
         textTransform: "none",
         boxShadow: "0 1px 2px rgba(0, 0, 0, 0.18)",
     });
-    btn.textContent = "Releases";
-    btn.title = "Open Codex++ releases";
+    btn.textContent = "Update";
+    btn.title = "Open Codex++ update";
     btn.addEventListener("mouseenter", () => {
         btn.style.background = "#0071E3";
     });
@@ -1650,9 +1665,34 @@ function sidebarReleasesPillButton() {
     btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        void electron_1.ipcRenderer.invoke("codexpp:open-external", CODEX_PLUSPLUS_RELEASES_URL);
+        void electron_1.ipcRenderer.invoke("codexpp:open-external", btn.dataset.codexppReleaseUrl || CODEX_PLUSPLUS_RELEASES_URL);
     });
     return btn;
+}
+function refreshSidebarCodexPlusPlusUpdateButton(force = false) {
+    const btn = state.codexPlusPlusUpdateButton;
+    if (!btn)
+        return;
+    void electron_1.ipcRenderer
+        .invoke("codexpp:check-codexpp-update", force)
+        .then((check) => setSidebarCodexPlusPlusUpdateButton(check))
+        .catch((e) => {
+        plog("Codex++ sidebar release check failed", String(e));
+        setSidebarCodexPlusPlusUpdateButton(null);
+    });
+}
+function setSidebarCodexPlusPlusUpdateButton(check) {
+    const btn = state.codexPlusPlusUpdateButton;
+    if (!btn)
+        return;
+    const updateAvailable = check?.updateAvailable === true;
+    btn.style.display = updateAvailable ? "inline-flex" : "none";
+    btn.hidden = !updateAvailable;
+    btn.dataset.codexppReleaseUrl = check?.releaseUrl || CODEX_PLUSPLUS_RELEASES_URL;
+    btn.title =
+        updateAvailable && check?.latestVersion
+            ? `Open Codex++ ${check.latestVersion} update`
+            : "Open Codex++ update";
 }
 function updateStoreUpdateBadge(count) {
     const badge = document.querySelector("[data-codexpp-store-update-badge]");
