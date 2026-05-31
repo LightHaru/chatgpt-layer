@@ -320,11 +320,18 @@ test("Codex main candidates include nested recovered Vite bundle files", () => {
     mkdirSync(buildDir, { recursive: true });
     writeFileSync(join(root, "bootstrap.js"), "");
     writeFileSync(join(buildDir, "main-abc123.js"), "");
+    writeFileSync(join(buildDir, "src-abc123.js"), "");
+    writeFileSync(join(buildDir, "app-session-abc123.js"), "");
     writeFileSync(join(buildDir, "renderer-abc123.js"), "");
+    writeFileSync(join(buildDir, "preload.js"), "");
 
     assert.deepEqual(findCodexMainCandidates(root, "bootstrap.js"), [
       join(root, "bootstrap.js"),
       join(buildDir, "main-abc123.js"),
+      join(buildDir, "app-session-abc123.js"),
+      join(buildDir, "src-abc123.js"),
+      join(buildDir, "renderer-abc123.js"),
+      join(buildDir, "preload.js"),
     ]);
   });
 });

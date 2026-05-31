@@ -6,7 +6,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { locateCodex, type CodexInstall } from "../platform.js";
 import { ensureUserPaths } from "../paths.js";
-import { backupOnce, patchAsar, readHeaderHash } from "../asar.js";
+import { backupOnce, patchAsar, readFileInAsar, readHeaderHash } from "../asar.js";
 import { setIntegrity, getIntegrity } from "../integrity.js";
 import { writeFuse } from "../fuses.js";
 import { clearQuarantine, prepareCodeSigning, signCodexApp, signatureInfo } from "../codesign.js";
@@ -41,7 +41,7 @@ const assetsDir = resolve(here, "..", "..", "assets");
 const sourceRoot = findSourceRoot(here);
 
 export async function install(opts: Opts = {}): Promise<void> {
-  const fuseFlip = opts.fuse !== false;
+  const wantsFuseFlip = opts.fuse !== false;
   const resign = opts.resign !== false;
   let localSigning = opts.localSigning === true;
   const wantWatcher = opts.watcher !== false;
@@ -49,7 +49,11 @@ export async function install(opts: Opts = {}): Promise<void> {
 
   const step = makeStepper(opts.quiet === true);
   const codex = locateCodex(opts.app);
+  const fuseFlip = shouldFlipElectronFuse(codex, wantsFuseFlip);
   step(`Located Codex at ${kleur.cyan(codex.appRoot)}`);
+  if (wantsFuseFlip && !fuseFlip) {
+    step("Skipping Electron fuse flip; Electron Framework binary was not found");
+  }
   preflightSystemTools(codex.platform, resign, codex.metaPath !== null);
   preflightAppClosed(codex);
 
@@ -89,7 +93,12 @@ export async function install(opts: Opts = {}): Promise<void> {
   const backupAsarUnpacked = join(paths.backup, "app.asar.unpacked");
   const backupPlist = codex.metaPath ? join(paths.backup, "Info.plist") : null;
   const backupFramework = join(paths.backup, "Electron Framework");
-  if (pristineAppBackup) backupPristineApp(codex.appRoot, pristineAppBackup, step);
+  if (pristineAppBackup) {
+    backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
+      hasPatchMarker: hasCodexPlusPlusAsarMarker(codex.asarPath),
+      step,
+    });
+  }
   backupOnce(codex.asarPath, backupAsar);
   if (existsSync(`${codex.asarPath}.unpacked`)) {
     backupOnce(`${codex.asarPath}.unpacked`, backupAsarUnpacked);
@@ -216,13 +225,42 @@ export function readCodexVersion(metaPath: string | null): string | null {
   }
 }
 
-function backupPristineApp(appRoot: string, backupPath: string, step: (msg: string) => void): void {
+export function shouldFlipElectronFuse(
+  codex: Pick<CodexInstall, "electronBinary">,
+  requested: boolean,
+): boolean {
+  return requested && existsSync(codex.electronBinary);
+}
+
+export function shouldBackupUnpatchedApp(input: { hasPatchMarker: boolean; signature: ReturnType<typeof signatureInfo> }): boolean {
+  if (input.hasPatchMarker) return false;
+  return input.signature.ok;
+}
+
+export function backupUnpatchedApp(
+  appRoot: string,
+  backupPath: string,
+  opts: { hasPatchMarker: boolean; step?: (msg: string) => void },
+): boolean {
   const sig = signatureInfo(appRoot);
-  if (!sig.ok || sig.adHoc || !sig.teamIdentifier) return;
+  if (!shouldBackupUnpatchedApp({ hasPatchMarker: opts.hasPatchMarker, signature: sig })) return false;
 
   rmSync(backupPath, { recursive: true, force: true });
   execFileSync("ditto", [appRoot, backupPath], { stdio: "ignore" });
-  step(`Backed up signed Codex.app to ${kleur.cyan(backupPath)}`);
+  opts.step?.(`Backed up unpatched Codex.app to ${kleur.cyan(backupPath)}`);
+  return true;
+}
+
+export function hasCodexPlusPlusAsarMarker(asarPath: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileInAsar(asarPath, "package.json").toString("utf8")) as {
+      main?: unknown;
+      __codexpp?: unknown;
+    };
+    return pkg.main === "codex-plusplus-loader.cjs" || typeof pkg.__codexpp === "object";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -332,11 +370,20 @@ export function findCodexMainCandidates(appDir: string, originalMain: string): s
   const out = [resolve(appDir, originalMain)];
   const buildDir = resolve(appDir, ".vite", "build");
   try {
-    for (const name of readdirSync(buildDir)) {
-      if (/^main(?:[-.].*)?\.js$/.test(name)) out.push(resolve(buildDir, name));
-    }
+    const viteFiles = readdirSync(buildDir)
+      .filter((name) => name.endsWith(".js"))
+      .sort((a, b) => candidateRank(a) - candidateRank(b) || a.localeCompare(b));
+    for (const name of viteFiles) out.push(resolve(buildDir, name));
   } catch {}
   return [...new Set(out)].filter((p) => existsSync(p));
+}
+
+function candidateRank(name: string): number {
+  if (/^main(?:[-.].*)?\.js$/.test(name)) return 0;
+  if (/^bootstrap(?:[-.].*)?\.js$/.test(name)) return 1;
+  if (/^(app|desktop|src)(?:[-.].*)?\.js$/.test(name)) return 2;
+  if (/preload|worker|service/i.test(name)) return 4;
+  return 3;
 }
 
 function formatWindowServicesHookFailure(

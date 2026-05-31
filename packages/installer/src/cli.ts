@@ -7,6 +7,7 @@ import { repair } from "./commands/repair.js";
 import { updateCodex } from "./commands/update-codex.js";
 import { selfUpdate } from "./commands/self-update.js";
 import { status } from "./commands/status.js";
+import { debug } from "./commands/debug.js";
 import { doctor } from "./commands/doctor.js";
 import { safeMode } from "./commands/safe-mode.js";
 import { CODEX_PLUSPLUS_VERSION } from "./version.js";
@@ -169,6 +170,12 @@ prog
   .command("status")
   .describe("Show patch status, paths, version")
   .action(status);
+
+prog
+  .command("debug")
+  .describe("Show Codex install, runtime, data paths, and open state")
+  .option("--app", "Path to Codex.app / install dir")
+  .action(wrap(debug));
 
 prog
   .command("doctor")

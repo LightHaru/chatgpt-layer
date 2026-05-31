@@ -3,7 +3,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { preflightWritableTargets } from "../src/commands/install";
+import {
+  preflightWritableTargets,
+  shouldBackupUnpatchedApp,
+  shouldFlipElectronFuse,
+} from "../src/commands/install";
 
 test("install preflight checks Info.plist before patching", { skip: process.platform === "win32" }, () => {
   withTempDir((root) => {
@@ -96,6 +100,60 @@ test("install preflight checks Electron Framework when fuse flip is enabled", { 
     } finally {
       chmodSync(electronBinary, 0o644);
     }
+  });
+});
+
+test("install refreshes full app backup only for unpatched apps", () => {
+  assert.equal(
+    shouldBackupUnpatchedApp({
+      hasPatchMarker: false,
+      signature: {
+        ok: true,
+        adHoc: false,
+        teamIdentifier: "TEAM",
+        authority: ["Developer ID Application"],
+        output: "",
+      },
+    }),
+    true,
+  );
+
+  assert.equal(
+    shouldBackupUnpatchedApp({
+      hasPatchMarker: true,
+      signature: {
+        ok: true,
+        adHoc: false,
+        teamIdentifier: "TEAM",
+        authority: ["Developer ID Application"],
+        output: "",
+      },
+    }),
+    false,
+  );
+
+  assert.equal(
+    shouldBackupUnpatchedApp({
+      hasPatchMarker: false,
+      signature: {
+        ok: false,
+        adHoc: false,
+        teamIdentifier: null,
+        authority: [],
+        output: "invalid signature",
+      },
+    }),
+    false,
+  );
+});
+
+test("install skips Electron fuse flipping when the framework binary is missing", () => {
+  withTempDir((root) => {
+    const electronBinary = join(root, "Electron Framework");
+    assert.equal(shouldFlipElectronFuse({ electronBinary }, true), false);
+    writeFileSync(electronBinary, "");
+    assert.equal(shouldFlipElectronFuse({ electronBinary }, true), true);
+    assert.equal(shouldFlipElectronFuse({ electronBinary }, false), false);
   });
 });
 

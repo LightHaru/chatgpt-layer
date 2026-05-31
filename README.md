@@ -88,7 +88,7 @@ To revert:
 codexplusplus uninstall
 ```
 
-Other commands: `status`, `doctor`, `repair`, `update-codex`, `create-tweak`,
+Other commands: `status`, `debug`, `doctor`, `repair`, `update-codex`, `create-tweak`,
 `validate-tweak`, `dev`, and `safe-mode`.
 Run `codexplusplus safe-mode --off` to leave safe mode and return to normal
 tweak loading.

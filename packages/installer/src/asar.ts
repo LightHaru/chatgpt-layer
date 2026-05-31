@@ -48,9 +48,9 @@ export async function patchAsar(
   const extractDir = join(work, "src");
   const outAsar = join(work, "app.asar");
 
-  // Snapshot which files were unpacked in the ORIGINAL asar before we touch
-  // anything; we'll feed that exact set back to createPackageWithOptions.
-  const originalUnpackGlob = collectUnpackGlob(asarPath);
+  // Snapshot what was unpacked in the ORIGINAL asar before we touch anything;
+  // we'll feed an equivalent compact set back to createPackageWithOptions.
+  const originalUnpackOptions = collectUnpackOptions(asarPath);
 
   try {
     asar.extractAll(asarPath, extractDir);
@@ -58,7 +58,7 @@ export async function patchAsar(
 
     await asar.createPackageWithOptions(extractDir, outAsar, {
       globOptions: { dot: true },
-      ...(originalUnpackGlob ? { unpack: originalUnpackGlob } : {}),
+      ...originalUnpackOptions,
     });
 
     // Atomic-ish replace: write next to the target, then rename. This prevents
@@ -102,41 +102,81 @@ function isTransientCleanupError(error: unknown): boolean {
 }
 
 /**
- * Walk the existing asar header and produce a brace-expansion glob naming
- * exactly the unpacked files. @electron/asar's `unpackDir` option recursively
- * unpacks entire directories, which promotes package metadata (`package.json`,
- * `LICENSE`, etc.) to unpacked even when those files are not physically present
- * in `.unpacked/`.
+ * Walk the existing asar header and produce compact glob options that preserve
+ * exactly what was unpacked. Prefer unpackDir for fully-unpacked directories,
+ * falling back to unpack for individual files.
  *
  * Why this matters: if the header marks a file `unpacked: true` but the file
  * isn't on disk under `app.asar.unpacked/`, Electron's resolver throws
- * MODULE_NOT_FOUND when something requires the module — exactly the failure
- * mode we hit before this fix.
+ * MODULE_NOT_FOUND when something requires the module. The current Owl app also
+ * has hundreds of unpacked files, so preserving each file with one giant glob
+ * can exceed minimatch's pattern length limit.
  */
-function collectUnpackGlob(asarPath: string): string | undefined {
+export function collectUnpackOptions(asarPath: string): { unpack?: string; unpackDir?: string } {
   const sibling = `${asarPath}.unpacked`;
-  if (!existsSync(sibling)) return undefined;
+  if (!existsSync(sibling)) return {};
   const raw = (asar as unknown as {
     getRawHeader: (p: string) => { header: { files?: Record<string, unknown> } };
   }).getRawHeader(asarPath);
-  const paths: string[] = [];
-  walk(raw.header as Record<string, unknown>, "", paths);
-  if (paths.length === 0) return undefined;
-  // `unpack` is matched against absolute filenames, so prefix each archive path
-  // with `**` to match regardless of the temporary extraction directory.
-  const patterns = paths.map((p) => `**${p}`);
-  return patterns.length === 1 ? patterns[0] : `{${patterns.join(",")}}`;
+  const covers = unpackCovers(raw.header as Record<string, unknown>, "").covers;
+  const dirs = covers
+    .filter((cover) => cover.type === "dir")
+    .map((cover) => stripLeadingSlash(cover.path));
+  const files = covers
+    .filter((cover) => cover.type === "file")
+    .map((cover) => `**/${stripLeadingSlash(cover.path)}`);
+  return {
+    ...(files.length > 0 ? { unpack: bracePattern(files) } : {}),
+    ...(dirs.length > 0 ? { unpackDir: bracePattern(dirs) } : {}),
+  };
 }
 
-function walk(node: Record<string, unknown>, prefix: string, out: string[]): void {
+interface UnpackCover {
+  type: "dir" | "file";
+  path: string;
+}
+
+function unpackCovers(
+  node: Record<string, unknown>,
+  prefix: string,
+): { total: number; unpacked: number; covers: UnpackCover[] } {
   const files = (node as { files?: Record<string, Record<string, unknown>> }).files;
-  if (!files) return;
+  if (!files) return { total: 0, unpacked: 0, covers: [] };
+
+  let total = 0;
+  let unpacked = 0;
+  const covers: UnpackCover[] = [];
+
   for (const [name, val] of Object.entries(files)) {
     const p = `${prefix}/${name}`;
     const isDir = !!(val as { files?: unknown }).files;
-    if (!isDir && (val as { unpacked?: boolean }).unpacked) out.push(p);
-    if (isDir) walk(val, p, out);
+    if (isDir) {
+      const child = unpackCovers(val, p);
+      total += child.total;
+      unpacked += child.unpacked;
+      covers.push(...child.covers);
+      continue;
+    }
+
+    total += 1;
+    if ((val as { unpacked?: boolean }).unpacked) {
+      unpacked += 1;
+      covers.push({ type: "file", path: p });
+    }
   }
+
+  if (prefix && total > 0 && total === unpacked) {
+    return { total, unpacked, covers: [{ type: "dir", path: prefix }] };
+  }
+  return { total, unpacked, covers };
+}
+
+function stripLeadingSlash(path: string): string {
+  return path.replace(/^\/+/, "");
+}
+
+function bracePattern(patterns: string[]): string {
+  return patterns.length === 1 ? patterns[0] : `{${patterns.join(",")}}`;
 }
 
 /** Backup helper: copy `from` to `to` if `to` doesn't already exist. */
