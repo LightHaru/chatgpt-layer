@@ -10,6 +10,8 @@ Version: `1.0.0`
 
 > Unofficial project. Not affiliated with OpenAI. Use at your own risk.
 
+<img width="1413" height="1016" alt="Codex++ settings screenshot" src="https://github.com/user-attachments/assets/ea0b2ffc-c30d-4f68-ae12-dd8d6a997b2f" />
+
 ## TL;DR
 
 Codex++ patches your local Codex app so Codex loads a small Codex++ runtime on
