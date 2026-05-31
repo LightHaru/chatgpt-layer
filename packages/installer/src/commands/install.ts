@@ -34,6 +34,7 @@ interface Opts {
   watcher?: boolean;
   watcherKind?: WatcherKind;
   quiet?: boolean;
+  verbose?: boolean;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -46,12 +47,13 @@ export async function install(opts: Opts = {}): Promise<void> {
   let localSigning = opts.localSigning === true;
   const wantWatcher = opts.watcher !== false;
 
-  const step = makeStepper(opts.quiet === true);
+  const step = makeStepper({ quiet: opts.quiet === true, verbose: opts.verbose === true });
   const codex = locateCodex(opts.app);
   const fuseFlip = shouldFlipElectronFuse(codex, wantsFuseFlip);
-  step(`Located Codex at ${kleur.cyan(codex.appRoot)}`);
+  const codexVersion = readCodexVersion(codex.metaPath);
+  step(`Codex: ${kleur.cyan(codex.appRoot)}${codexVersion ? ` (${kleur.cyan(codexVersion)}, ${codex.channel})` : ` (${codex.channel})`}`);
   if (wantsFuseFlip && !fuseFlip) {
-    step("Skipping Electron fuse flip; Electron Framework binary was not found");
+    step.detail("Skipping Electron fuse flip; Electron Framework binary was not found");
   }
   preflightSystemTools(codex.platform, resign, codex.metaPath !== null);
   const reopenAfterPatch = preflightAppClosed(codex, step);
@@ -59,7 +61,7 @@ export async function install(opts: Opts = {}): Promise<void> {
   // Pre-flight every app-bundle target we will mutate so permission failures
   // surface before we patch app.asar or touch backups.
   preflightWritableTargets(codex, { fuseFlip });
-  step("Bundle is writable");
+  step.detail("Bundle writable");
 
   let preparedSigning: ReturnType<typeof prepareCodeSigning> = null;
   if (resign && codex.platform === "darwin") {
@@ -76,13 +78,9 @@ export async function install(opts: Opts = {}): Promise<void> {
     }
   }
 
-  const codexVersion = readCodexVersion(codex.metaPath);
-  if (codexVersion) step(`Codex version: ${kleur.cyan(codexVersion)}`);
-  step(`Codex channel: ${kleur.cyan(codex.channel)}`);
-
   const paths = ensureUserPaths();
-  step(`User dir: ${kleur.cyan(paths.root)}`);
-  step(formatCliShimResult(installCliShims(paths.binDir)));
+  step.detail(`User dir: ${kleur.cyan(paths.root)}`);
+  step(formatCliStep(formatCliShimResult(installCliShims(paths.binDir))));
   const launcher = installWindowsManagedAppLauncher(codex);
   if (launcher) step(`Installed patched Codex++ launcher${launcher.shortcutPaths.length === 1 ? "" : "s"}: ${launcher.shortcutPaths.map((p) => kleur.cyan(p)).join(", ")}`);
 
@@ -92,10 +90,11 @@ export async function install(opts: Opts = {}): Promise<void> {
   const backupAsarUnpacked = join(paths.backup, "app.asar.unpacked");
   const backupPlist = codex.metaPath ? join(paths.backup, "Info.plist") : null;
   const backupFramework = join(paths.backup, "Electron Framework");
+  let appBackupRefreshed = false;
   if (pristineAppBackup) {
-    backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
+    appBackupRefreshed = backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
       hasPatchMarker: hasCodexPlusPlusAsarMarker(codex.asarPath),
-      step,
+      step: step.detail,
     });
   }
   backupOnce(codex.asarPath, backupAsar);
@@ -104,23 +103,23 @@ export async function install(opts: Opts = {}): Promise<void> {
   }
   if (codex.metaPath && backupPlist) backupOnce(codex.metaPath, backupPlist);
   if (fuseFlip) backupOnce(codex.electronBinary, backupFramework);
-  step("Backed up originals");
+  step(appBackupRefreshed ? "Backup refreshed" : "Backup ready");
 
   const { headerHash: originalAsarHash } = readHeaderHash(codex.asarPath);
 
   // 2. Stage runtime + loader into the user dir.
   stageAssets(paths.runtime);
-  step(`Staged runtime to ${kleur.cyan(paths.runtime)}`);
+  step("Runtime staged");
 
   // 3. Patch app.asar entry point to require our loader.
-  const originalEntry = await injectLoader(codex.asarPath, paths.root, step);
+  const originalEntry = await injectLoader(codex.asarPath, paths.root, step.detail);
   const { headerHash: patchedAsarHash } = readHeaderHash(codex.asarPath);
-  step(`Patched app.asar (entry was ${kleur.dim(originalEntry)})`);
+  step.detail(`Patched app.asar (entry was ${kleur.dim(originalEntry)})`);
 
   // 4. Update Info.plist hash so Electron's integrity check passes.
   if (codex.metaPath) {
     setIntegrity(codex, patchedAsarHash);
-    step(`Updated ElectronAsarIntegrity → ${kleur.dim(patchedAsarHash.slice(0, 12))}…`);
+    step.detail(`Updated ElectronAsarIntegrity → ${kleur.dim(patchedAsarHash.slice(0, 12))}…`);
   }
 
   // 5. Belt-and-suspenders: flip the integrity validation fuse off.
@@ -132,12 +131,13 @@ export async function install(opts: Opts = {}): Promise<void> {
         "EnableEmbeddedAsarIntegrityValidation",
         "off",
       );
-      step(`Fuse EnableEmbeddedAsarIntegrityValidation: ${r.from} → ${r.to}`);
+      step.detail(`Fuse EnableEmbeddedAsarIntegrityValidation: ${r.from} → ${r.to}`);
       fuseFlipped = true;
     } catch (e) {
       console.warn(kleur.yellow(`Fuse flip failed: ${(e as Error).message}`));
     }
   }
+  step("App patched");
 
   // 6. Re-sign on macOS.
   let resigned = false;
@@ -156,10 +156,10 @@ export async function install(opts: Opts = {}): Promise<void> {
     signingIdentityHash = signing?.identityHash;
     if (signing?.mode === "local-identity") {
       step(
-        `${signing.createdIdentity ? "Created and used" : "Used"} local signing identity ${kleur.cyan(signing.identity)}`,
+        `Signing: ${signing.createdIdentity ? "created local identity" : "local identity"} ${kleur.cyan(signing.identity)}`,
       );
     } else {
-      step("Re-signed ad-hoc");
+      step("Signing: ad-hoc");
     }
   }
 
@@ -168,7 +168,7 @@ export async function install(opts: Opts = {}): Promise<void> {
   if (wantWatcher) {
     try {
       watcher = installWatcher(codex.appRoot);
-      step(`Installed watcher (${watcher})`);
+      step(`Watcher: ${watcher}`);
     } catch (e) {
       console.warn(kleur.yellow(`Watcher install failed: ${(e as Error).message}`));
     }
@@ -196,14 +196,12 @@ export async function install(opts: Opts = {}): Promise<void> {
   chownForTargetUser(paths.root, { recursive: true });
   if (reopenAfterPatch) {
     openCodex(codex.appRoot, { detached: true, delayMs: 1_000 });
-    step("Reopened Codex");
+    step("Codex reopened");
   }
 
   if (!opts.quiet) {
     console.log();
-    console.log(kleur.green().bold("✓ codex-plusplus installed."));
-    console.log(`  Tweaks dir: ${kleur.cyan(paths.tweaks)}`);
-    console.log(`  Logs:       ${kleur.cyan(paths.logDir)}`);
+    console.log(`${kleur.green().bold("✓ codex-plusplus installed.")} Tweaks: ${kleur.cyan(paths.tweaks)} Logs: ${kleur.cyan(paths.logDir)}`);
     if (launcher) {
       console.log(`  Launch ${kleur.cyan("Codex++")} from Start Menu or Desktop.`);
       console.log(`  Opening the Microsoft Store ${kleur.cyan("Codex")} app directly will launch the unpatched app.`);
@@ -487,11 +485,25 @@ export function stageAssets(runtimeDir: string): void {
   );
 }
 
-function makeStepper(quiet = false) {
+interface Stepper {
+  (msg: string): void;
+  detail(msg: string): void;
+}
+
+function makeStepper(opts: { quiet?: boolean; verbose?: boolean } = {}): Stepper {
   let n = 1;
-  return (msg: string) => {
-    if (!quiet) console.log(`${kleur.dim(`[${n++}]`)} ${msg}`);
+  const emit = (msg: string) => {
+    if (!opts.quiet) console.log(`${kleur.dim(`[${n++}]`)} ${msg}`);
   };
+  const step = emit as Stepper;
+  step.detail = (msg: string) => {
+    if (opts.verbose) emit(msg);
+  };
+  return step;
+}
+
+function formatCliStep(message: string): string {
+  return message.replace(/^Installed CLI(?::)?/, "CLI");
 }
 
 export function preflightWritableTargets(
