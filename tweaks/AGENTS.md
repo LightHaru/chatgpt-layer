@@ -94,6 +94,7 @@ See `@codex-plusplus/sdk` for full types. The most-used pieces:
 - `api.fs.{read,write,exists}` — sandboxed to your tweak's data dir.
 - `api.codex.runtime.{getInfo,getCapabilities}` — Owl/Electron runtime probes.
 - `api.codex.windows.{create,getPrimary,focus,show}` — stable native Codex window hooks.
+- `api.codex.views.create(...)` — Owl `WebContentsView`/`BrowserView` overlays inside Codex windows.
 - `api.codex.cdp.{getStatus,listTargets}` — CDP status/target discovery when remote debug is enabled.
 - `api.codex.native.{loadModule,createPanel,attachView,launchHelper}` — native module, AppKit/Metal view, and helper bridge.
 - `api.codex.{createWindow,createBrowserView}` — backwards-compatible window/view hooks.

@@ -6,6 +6,7 @@ export interface RuntimeProbeOptions {
     channel: string | null;
     getWindowServices(): unknown | null;
     getNativeCapabilities?(): CodexRuntimeCapabilities["native"];
+    getViewCapabilities?(): CodexRuntimeCapabilities["views"];
 }
 export declare function getRuntimeInfo(opts: RuntimeProbeOptions): CodexRuntimeInfo;
 export declare function getRuntimeCapabilities(opts: RuntimeProbeOptions): CodexRuntimeCapabilities;

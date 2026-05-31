@@ -82,16 +82,18 @@ Valid permission strings:
 | `network` | Makes network requests. |
 | `codex-runtime` | Reads Codex runtime info/capabilities. |
 | `codex-windows` | Uses namespaced Codex window APIs. |
+| `codex-views` | Creates Owl `WebContentsView` / `BrowserView` overlays. |
 | `codex-cdp` | Reads CDP status or target metadata when CDP is enabled. |
 | `codex.windows` | Opens Codex-native windows. |
-| `codex.views` | Creates embedded Codex BrowserViews. |
+| `codex.views` | Legacy alias for embedded Codex/Owl views. |
 | `native-module` | Loads tweak-owned in-process native modules. |
 | `native-view` | Creates AppKit/Metal native panels or views. |
 | `native-helper` | Launches tweak-owned native helper processes. |
 
 Permissions are declarations for review and user visibility. Native bridge
-permissions are also enforced at runtime:
+permissions and Owl view permissions are also enforced at runtime:
 
+- `codex-views` or `codex.views` is required for `api.codex.views.create()`.
 - `native-module` is required for `api.codex.native.loadModule()` and module
   requests.
 - `native-view` is required for `api.codex.native.createPanel()`,

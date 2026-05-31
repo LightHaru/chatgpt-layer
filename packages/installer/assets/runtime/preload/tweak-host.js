@@ -66,6 +66,7 @@ function teardownTweakHost() {
             console.warn("[codex-plusplus] tweak stop failed:", id, e);
         }
         finally {
+            void electron_1.ipcRenderer.invoke("codexpp:codex-view-dispose-tweak", id).catch(() => { });
             void electron_1.ipcRenderer.invoke("codexpp:native-dispose-tweak", id).catch(() => { });
         }
     }
@@ -198,6 +199,12 @@ function rendererCodexApi(tweakId) {
             focus: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-focus", windowId),
             show: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-show", windowId),
         },
+        views: {
+            create: async (options) => {
+                const ref = await electron_1.ipcRenderer.invoke("codexpp:codex-view-create", tweakId, options);
+                return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
+            },
+        },
         cdp: {
             getStatus: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-status"),
             listTargets: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-targets"),
@@ -224,6 +231,19 @@ function rendererCodexApi(tweakId) {
             throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
         },
         createWindow: (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", options),
+    };
+}
+function rendererCodexViewRef(tweakId, id, webContentsId, parentWindowId) {
+    return {
+        id,
+        webContentsId,
+        parentWindowId,
+        setBounds: (bounds) => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "setBounds", bounds),
+        setVisible: (visible) => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "setVisible", visible),
+        bringToFront: () => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "bringToFront"),
+        loadRoute: (route, hostId) => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "loadRoute", route, hostId),
+        loadUrl: (url) => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "loadUrl", url),
+        dispose: () => electron_1.ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "dispose"),
     };
 }
 function rendererNativeModuleRef(tweakId, id, kind) {

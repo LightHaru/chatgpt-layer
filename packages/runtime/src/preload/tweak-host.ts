@@ -20,6 +20,7 @@ import type {
   CodexCdpTarget,
   CodexRuntimeCapabilities,
   CodexRuntimeInfo,
+  CodexViewRef,
   CodexWindowRef,
   NativeHelperLaunchOptions,
   NativeHelperRef,
@@ -122,6 +123,7 @@ export function teardownTweakHost(): void {
     } catch (e) {
       console.warn("[codex-plusplus] tweak stop failed:", id, e);
     } finally {
+      void ipcRenderer.invoke("codexpp:codex-view-dispose-tweak", id).catch(() => {});
       void ipcRenderer.invoke("codexpp:native-dispose-tweak", id).catch(() => {});
     }
   }
@@ -269,6 +271,16 @@ function rendererCodexApi(tweakId: string): NonNullable<TweakApi["codex"]> {
       show: (windowId) =>
         ipcRenderer.invoke("codexpp:codex-window-show", windowId) as Promise<boolean>,
     },
+    views: {
+      create: async (options) => {
+        const ref = await ipcRenderer.invoke(
+          "codexpp:codex-view-create",
+          tweakId,
+          options,
+        ) as { id: string; webContentsId: number; parentWindowId: number | null };
+        return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
+      },
+    },
     cdp: {
       getStatus: () =>
         ipcRenderer.invoke("codexpp:codex-cdp-status") as Promise<CodexCdpStatus>,
@@ -314,6 +326,31 @@ function rendererCodexApi(tweakId: string): NonNullable<TweakApi["codex"]> {
     },
     createWindow: (options) =>
       ipcRenderer.invoke("codexpp:codex-window-create", options) as Promise<CodexWindowRef>,
+  };
+}
+
+function rendererCodexViewRef(
+  tweakId: string,
+  id: string,
+  webContentsId: number,
+  parentWindowId: number | null,
+): CodexViewRef {
+  return {
+    id,
+    webContentsId,
+    parentWindowId,
+    setBounds: (bounds) =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "setBounds", bounds) as Promise<void>,
+    setVisible: (visible) =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "setVisible", visible) as Promise<void>,
+    bringToFront: () =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "bringToFront") as Promise<void>,
+    loadRoute: (route, hostId) =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "loadRoute", route, hostId) as Promise<void>,
+    loadUrl: (url) =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "loadUrl", url) as Promise<void>,
+    dispose: () =>
+      ipcRenderer.invoke("codexpp:codex-view-call", tweakId, id, "dispose") as Promise<void>,
   };
 }
 

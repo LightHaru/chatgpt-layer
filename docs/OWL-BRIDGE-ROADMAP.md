@@ -75,6 +75,12 @@ interface CodexRuntimeCapabilities {
     primary: boolean;
     browserView: boolean;
   };
+  views: {
+    create: boolean;
+    privateViewTree: boolean;
+    webContentsView: boolean;
+    browserViewFallback: boolean;
+  };
   cdp: {
     supported: boolean;
     enabled: boolean;
@@ -113,6 +119,7 @@ owl bridge
   window services:     available
   windows.create:      available
   windows.primary:     available
+  owl views:           available
   cdp:                 supported, disabled
   native modules:      available
   native panels:       available

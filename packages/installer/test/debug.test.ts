@@ -120,6 +120,7 @@ test("collectOwlBridgeReport reports install-time Owl bridge capabilities while 
       join(paths.runtime, "main.js"),
       [
         "codexpp:native-load-module",
+        "codexpp:codex-view-create",
         "codexpp:native-create-panel",
         "codexpp:native-attach-view",
         "codexpp:native-launch-helper",
@@ -143,6 +144,7 @@ test("collectOwlBridgeReport reports install-time Owl bridge capabilities while 
     assert.equal(report.windowServices, "available");
     assert.equal(report.windowsCreate, "available");
     assert.equal(report.windowsPrimary, "available");
+    assert.equal(report.owlViews, "available");
     assert.equal(report.cdp, "supported, disabled");
     assert.equal(report.nativeModules, "available");
     assert.equal(report.nativeHelpers, "available");

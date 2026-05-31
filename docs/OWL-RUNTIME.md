@@ -413,10 +413,20 @@ const win = await api.codex.windows.create({
 
 const cdp = await api.codex.cdp.getStatus();
 
+const overlay = await api.codex.views.create({
+  parentWindowId: primary?.windowId ?? win.windowId,
+  route: "/",
+  bounds: { x: 24, y: 24, width: 420, height: 260 },
+});
+
 const panel = await api.codex.native.createPanel({
   parentWindowId: primary?.windowId ?? win.windowId,
 });
 ```
+
+`api.codex.views` uses Owl's private
+`contentView.addChildView(view.webContentsView)` path when available and falls
+back to `BrowserWindow.addBrowserView(view)`.
 
 `createPanel()` and `attachView()` use the bundled Codex++ native host when
 `moduleId` is omitted. Tweak-owned `.node` modules can still be loaded with

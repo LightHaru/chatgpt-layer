@@ -16,6 +16,7 @@ export interface RuntimeProbeOptions {
   channel: string | null;
   getWindowServices(): unknown | null;
   getNativeCapabilities?(): CodexRuntimeCapabilities["native"];
+  getViewCapabilities?(): CodexRuntimeCapabilities["views"];
 }
 
 export function getRuntimeInfo(opts: RuntimeProbeOptions): CodexRuntimeInfo {
@@ -35,6 +36,7 @@ export function getRuntimeCapabilities(opts: RuntimeProbeOptions): CodexRuntimeC
   const windowManager = asRecord(services?.windowManager);
   const cdp = getCdpStatus();
   const native = opts.getNativeCapabilities?.() ?? defaultNativeCapabilities();
+  const views = opts.getViewCapabilities?.() ?? defaultViewCapabilities();
   const canCreateWindow = typeof windowManager?.createWindow === "function" ||
     typeof services?.createFreshWindow === "function" ||
     typeof services?.createFreshLocalWindow === "function" ||
@@ -47,6 +49,7 @@ export function getRuntimeCapabilities(opts: RuntimeProbeOptions): CodexRuntimeC
         typeof windowManager?.getPrimaryWindow === "function",
       browserView: typeof windowManager?.registerWindow === "function",
     },
+    views,
     cdp: {
       supported: true,
       enabled: cdp.enabled,
@@ -160,6 +163,15 @@ function defaultNativeCapabilities(): CodexRuntimeCapabilities["native"] {
     metalViews: false,
     nativeHost: false,
     helpers: true,
+  };
+}
+
+function defaultViewCapabilities(): CodexRuntimeCapabilities["views"] {
+  return {
+    create: false,
+    privateViewTree: false,
+    webContentsView: false,
+    browserViewFallback: typeof BrowserWindow.fromId === "function",
   };
 }
 

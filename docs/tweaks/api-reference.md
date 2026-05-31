@@ -56,6 +56,9 @@ Types and interfaces:
 - [`CodexRuntimeCapabilities`](#codexruntimecapabilities)
 - [`CodexRuntimeApi`](#codexruntimeapi)
 - [`CodexWindowsApi`](#codexwindowsapi)
+- [`CodexViewCreateOptions`](#codexviewcreateoptions)
+- [`CodexViewRef`](#codexviewref)
+- [`CodexViewsApi`](#codexviewsapi)
 - [`CodexCdpStatus`](#codexcdpstatus)
 - [`CodexCdpTarget`](#codexcdptarget)
 - [`CodexCdpApi`](#codexcdpapi)
@@ -131,6 +134,7 @@ const VALID_TWEAK_PERMISSIONS = [
   "settings",
   "codex-runtime",
   "codex-windows",
+  "codex-views",
   "codex-cdp",
   "codex.windows",
   "codex.views",
@@ -250,6 +254,7 @@ type TweakPermission =
   | "settings"
   | "codex-runtime"
   | "codex-windows"
+  | "codex-views"
   | "codex-cdp"
   | "codex.windows"
   | "codex.views"
@@ -258,8 +263,8 @@ type TweakPermission =
   | "native-helper"
 ```
 
-Declared capabilities for user visibility/review. Current runtime does not use
-these as hard enforcement.
+Declared capabilities for user visibility/review. Native permissions and Owl
+view permissions are enforced at runtime.
 
 ## `TweakMcpServer`
 
@@ -489,6 +494,7 @@ avoid path traversal.
 interface CodexApi {
   runtime: CodexRuntimeApi;
   windows: CodexWindowsApi;
+  views: CodexViewsApi;
   cdp: CodexCdpApi;
   native: CodexNativeApi;
   createBrowserView(options: CodexCreateViewOptions): Promise<unknown>;
@@ -537,6 +543,12 @@ interface CodexRuntimeCapabilities {
     primary: boolean;
     browserView: boolean;
   };
+  views: {
+    create: boolean;
+    privateViewTree: boolean;
+    webContentsView: boolean;
+    browserViewFallback: boolean;
+  };
   cdp: {
     supported: boolean;
     enabled: boolean;
@@ -578,6 +590,59 @@ interface CodexWindowsApi {
 ```
 
 `create()` is the namespaced replacement for `api.codex.createWindow()`.
+
+## `CodexViewCreateOptions`
+
+```ts
+interface CodexViewCreateOptions {
+  id?: string;
+  parentWindowId?: number;
+  route?: string;
+  url?: string;
+  hostId?: string;
+  appearance?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+  visible?: boolean;
+  backgroundColor?: string;
+  registerWithCodex?: boolean;
+}
+```
+
+Creates an Owl `BrowserView` / `WebContentsView` child inside a Codex window.
+When `route` is provided, Codex++ loads the Codex app route through
+`app://-/index.html` and registers the view with Codex's host context unless
+`registerWithCodex` is `false`. When `url` is provided, it loads that URL.
+
+The tweak manifest must declare `codex-views` or the legacy `codex.views`
+permission.
+
+## `CodexViewRef`
+
+```ts
+interface CodexViewRef {
+  id: string;
+  webContentsId: number;
+  parentWindowId: number | null;
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+  setVisible(visible: boolean): Promise<void>;
+  bringToFront(): Promise<void>;
+  loadRoute(route: string, hostId?: string): Promise<void>;
+  loadUrl(url: string): Promise<void>;
+  dispose(): Promise<void>;
+}
+```
+
+The ref is serializable and works from renderer or main tweaks. Internally,
+Codex++ prefers Owl's private `contentView.addChildView(view.webContentsView)`
+path and falls back to `BrowserWindow.addBrowserView(view)`.
+
+## `CodexViewsApi`
+
+```ts
+interface CodexViewsApi {
+  create(options: CodexViewCreateOptions): Promise<CodexViewRef>;
+}
+```
 
 ## `CodexCdpStatus`
 

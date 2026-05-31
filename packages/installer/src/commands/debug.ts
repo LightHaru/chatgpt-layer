@@ -34,6 +34,7 @@ export interface OwlBridgeReport {
   windowServices: string;
   windowsCreate: string;
   windowsPrimary: string;
+  owlViews: string;
   cdp: string;
   nativeModules: string;
   nativePanels: string;
@@ -182,6 +183,7 @@ export function collectOwlBridgeReport(
   const windowServicesPatched = hasWindowServicesMarker(codex.asarPath);
   const runtimeMain = join(paths.runtime, "main.js");
   const hasNativeModules = runtimeFeature(runtimeMain, "codexpp:native-load-module");
+  const hasOwlViews = runtimeFeature(runtimeMain, "codexpp:codex-view-create");
   const hasNativePanels = runtimeFeature(runtimeMain, "codexpp:native-create-panel");
   const hasNativeViews = runtimeFeature(runtimeMain, "codexpp:native-attach-view");
   const hasNativeHelpers = runtimeFeature(runtimeMain, "codexpp:native-launch-helper");
@@ -199,6 +201,7 @@ export function collectOwlBridgeReport(
     windowServices: windowServicesPatched ? "available" : "unavailable",
     windowsCreate: windowServicesPatched ? "available" : "unavailable",
     windowsPrimary: windowServicesPatched ? "available" : "unavailable",
+    owlViews: hasOwlViews ? "available" : "unavailable",
     cdp: cdp.enabled ? `enabled (${cdp.url})` : "supported, disabled",
     nativeModules: hasNativeModules ? "available" : "unavailable",
     nativePanels: hasNativePanels && hasNativeHost && isOwl && process.platform === "darwin"
@@ -497,6 +500,7 @@ function printDebugReport(report: DebugReport): void {
   console.log(`  window services:${bridgePad(report.owlBridge.windowServices)}`);
   console.log(`  windows.create: ${bridgeLabel(report.owlBridge.windowsCreate)}`);
   console.log(`  windows.primary:${bridgePad(report.owlBridge.windowsPrimary)}`);
+  console.log(`  owl views:      ${bridgeLabel(report.owlBridge.owlViews)}`);
   console.log(`  cdp:            ${bridgeLabel(report.owlBridge.cdp)}`);
   console.log(`  native modules: ${bridgeLabel(report.owlBridge.nativeModules)}`);
   console.log(`  native panels:  ${bridgeLabel(report.owlBridge.nativePanels)}`);

@@ -25,6 +25,7 @@ test("validateTweakManifest accepts Owl bridge permissions", () => {
     permissions: [
       "codex-runtime",
       "codex-windows",
+      "codex-views",
       "codex-cdp",
       "native-module",
       "native-view",

@@ -23,6 +23,7 @@ function getRuntimeCapabilities(opts) {
     const windowManager = asRecord(services?.windowManager);
     const cdp = getCdpStatus();
     const native = opts.getNativeCapabilities?.() ?? defaultNativeCapabilities();
+    const views = opts.getViewCapabilities?.() ?? defaultViewCapabilities();
     const canCreateWindow = typeof windowManager?.createWindow === "function" ||
         typeof services?.createFreshWindow === "function" ||
         typeof services?.createFreshLocalWindow === "function" ||
@@ -35,6 +36,7 @@ function getRuntimeCapabilities(opts) {
                 typeof windowManager?.getPrimaryWindow === "function",
             browserView: typeof windowManager?.registerWindow === "function",
         },
+        views,
         cdp: {
             supported: true,
             enabled: cdp.enabled,
@@ -146,6 +148,14 @@ function defaultNativeCapabilities() {
         metalViews: false,
         nativeHost: false,
         helpers: true,
+    };
+}
+function defaultViewCapabilities() {
+    return {
+        create: false,
+        privateViewTree: false,
+        webContentsView: false,
+        browserViewFallback: typeof electron_1.BrowserWindow.fromId === "function",
     };
 }
 function normalizeCdpTarget(row) {

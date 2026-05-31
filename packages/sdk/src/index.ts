@@ -68,6 +68,7 @@ export type TweakPermission =
   | "settings"
   | "codex-runtime"
   | "codex-windows"
+  | "codex-views"
   | "codex-cdp"
   | "codex.windows"
   | "codex.views"
@@ -84,6 +85,7 @@ export const VALID_TWEAK_PERMISSIONS = [
   "settings",
   "codex-runtime",
   "codex-windows",
+  "codex-views",
   "codex-cdp",
   "codex.windows",
   "codex.views",
@@ -397,6 +399,8 @@ export interface CodexApi {
   runtime: CodexRuntimeApi;
   /** Stable window helpers over Codex/Owl private window services. */
   windows: CodexWindowsApi;
+  /** Owl WebContentsView/BrowserView overlays inside Codex windows. */
+  views: CodexViewsApi;
   /** Chrome DevTools Protocol status and target discovery. */
   cdp: CodexCdpApi;
   /** Native module, AppKit/Metal view, and helper-process bridge. */
@@ -439,6 +443,12 @@ export interface CodexRuntimeCapabilities {
     primary: boolean;
     browserView: boolean;
   };
+  views: {
+    create: boolean;
+    privateViewTree: boolean;
+    webContentsView: boolean;
+    browserViewFallback: boolean;
+  };
   cdp: {
     supported: boolean;
     enabled: boolean;
@@ -466,6 +476,35 @@ export interface CodexWindowsApi {
   getPrimary(): Promise<CodexWindowRef | null>;
   focus(windowId: number): Promise<boolean>;
   show(windowId: number): Promise<boolean>;
+}
+
+export interface CodexViewCreateOptions {
+  id?: string;
+  parentWindowId?: number;
+  route?: string;
+  url?: string;
+  hostId?: string;
+  appearance?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+  visible?: boolean;
+  backgroundColor?: string;
+  registerWithCodex?: boolean;
+}
+
+export interface CodexViewRef {
+  id: string;
+  webContentsId: number;
+  parentWindowId: number | null;
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+  setVisible(visible: boolean): Promise<void>;
+  bringToFront(): Promise<void>;
+  loadRoute(route: string, hostId?: string): Promise<void>;
+  loadUrl(url: string): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export interface CodexViewsApi {
+  create(options: CodexViewCreateOptions): Promise<CodexViewRef>;
 }
 
 export interface CodexCdpStatus {
