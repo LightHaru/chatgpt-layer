@@ -8,7 +8,7 @@
  * code). The renderer-side runtime is bundled separately into preload.js.
  */
 import { app, BrowserView, BrowserWindow, clipboard, ipcMain, session, shell, webContents } from "electron";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomInt, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -994,10 +994,31 @@ function stopAllMainTweaks(): void {
 }
 
 function clearTweakModuleCache(): void {
-  // Drop any cached require() entries that live inside the tweaks dir so a
-  // re-require on next load picks up fresh code.
+  const rootSet = new Set<string>([TWEAKS_DIR, safeRealpath(TWEAKS_DIR)]);
+  const entrySet = new Set<string>();
+  for (const tweak of tweakState.discovered) {
+    rootSet.add(tweak.dir);
+    rootSet.add(safeRealpath(tweak.dir));
+    entrySet.add(tweak.entry);
+    entrySet.add(safeRealpath(tweak.entry));
+  }
+
+  const roots = [...rootSet];
   for (const key of Object.keys(require.cache)) {
-    if (isPathInside(TWEAKS_DIR, key)) delete require.cache[key];
+    const realKey = safeRealpath(key);
+    const isTweakModule =
+      entrySet.has(key) ||
+      entrySet.has(realKey) ||
+      roots.some((root) => isPathInside(root, key) || isPathInside(root, realKey));
+    if (isTweakModule) delete require.cache[key];
+  }
+}
+
+function safeRealpath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
   }
 }
 
@@ -1909,12 +1930,15 @@ function owlViewRef(view: ManagedOwlView): CodexViewRef {
 function attachOwlView(view: ManagedOwlView, parent: Electron.BrowserWindow): void {
   const contentView = asRecord(parent)?.contentView;
   const webContentsView = asRecord(view.view)?.webContentsView;
-  if (
+  if (typeof asRecord(parent)?.addBrowserView === "function") {
+    callObjectMethod(parent, "addBrowserView", [view.view]);
+    view.attachMode = "browserView";
+  } else if (
     typeof asRecord(contentView)?.addChildView === "function" &&
     webContentsView
   ) {
     try {
-      callObjectMethod(contentView, "addChildView", [webContentsView]);
+      addOwlChildView(parent, view.view);
       view.attachMode = "contentView";
     } catch (e) {
       log("warn", "Owl contentView attachment failed; falling back to BrowserView", {
@@ -1923,10 +1947,6 @@ function attachOwlView(view: ManagedOwlView, parent: Electron.BrowserWindow): vo
         error: String(e),
       });
     }
-  }
-  if (!view.attachMode && typeof asRecord(parent)?.addBrowserView === "function") {
-    callObjectMethod(parent, "addBrowserView", [view.view]);
-    view.attachMode = "browserView";
   }
   if (!view.attachMode) {
     throw new Error("Owl view attachment is not available on this Codex window");
@@ -1945,7 +1965,11 @@ function bringOwlViewToFront(view: ManagedOwlView): void {
   const webContentsView = asRecord(view.view)?.webContentsView;
   if (view.attachMode === "contentView" && webContentsView) {
     try {
-      callObjectMethod(contentView, "addChildView", [webContentsView]);
+      if (typeof asRecord(parent)?.setTopBrowserView === "function") {
+        callObjectMethod(parent, "setTopBrowserView", [view.view]);
+      } else {
+        callObjectMethod(contentView, "addChildView", [webContentsView]);
+      }
       return;
     } catch (e) {
       log("warn", "Owl contentView bring-to-front failed", {
@@ -1999,7 +2023,7 @@ function disposeOwlView(view: ManagedOwlView): void {
   if (parent && !isWindowDestroyed(parent)) {
     try {
       if (view.attachMode === "contentView") {
-        callObjectMethod(asRecord(parent)?.contentView, "removeChildView", [asRecord(view.view)?.webContentsView]);
+        removeOwlChildView(parent, view.view);
       } else if (view.attachMode === "browserView") {
         callObjectMethod(parent, "removeBrowserView", [view.view]);
       }
@@ -2026,6 +2050,37 @@ function owlViewFor(tweakId: string, id: string): ManagedOwlView {
 
 function owlViewKey(tweakId: string, viewId: string): string {
   return `${tweakId}:${viewId}`;
+}
+
+function addOwlChildView(parent: Electron.BrowserWindow, child: Electron.BrowserView): void {
+  const ownerWindow = asRecord(child)?.ownerWindow;
+  if (ownerWindow && ownerWindow !== parent) {
+    callObjectMethod(ownerWindow, "removeBrowserView", [child]);
+  }
+
+  callObjectMethod(asRecord(parent)?.contentView, "addChildView", [asRecord(child)?.webContentsView]);
+  try {
+    (child as unknown as { ownerWindow: Electron.BrowserWindow | null }).ownerWindow = parent;
+  } catch {}
+  callObjectMethod(asRecord(child.webContents), "_setOwnerWindow", [parent]);
+
+  const browserViews = asRecord(parent)?._browserViews;
+  if (Array.isArray(browserViews) && !browserViews.includes(child)) {
+    browserViews.push(child);
+  }
+}
+
+function removeOwlChildView(parent: Electron.BrowserWindow, child: Electron.BrowserView): void {
+  callObjectMethod(asRecord(parent)?.contentView, "removeChildView", [asRecord(child)?.webContentsView]);
+  try {
+    (child as unknown as { ownerWindow: Electron.BrowserWindow | null }).ownerWindow = null;
+  } catch {}
+
+  const browserViews = asRecord(parent)?._browserViews;
+  if (Array.isArray(browserViews)) {
+    const index = browserViews.indexOf(child);
+    if (index >= 0) browserViews.splice(index, 1);
+  }
 }
 
 async function createCodexBrowserView(opts: CodexCreateViewOptions): Promise<unknown> {
