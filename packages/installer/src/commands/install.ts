@@ -206,7 +206,9 @@ export async function install(opts: Opts = {}): Promise<void> {
       console.log(`  Launch ${kleur.cyan("Codex++")} from Start Menu or Desktop.`);
       console.log(`  Opening the Microsoft Store ${kleur.cyan("Codex")} app directly will launch the unpatched app.`);
     } else {
+      console.log();
       console.log(`  Launch Codex normally; the Tweaks tab will appear in Settings.`);
+      console.log();
     }
   }
 }
