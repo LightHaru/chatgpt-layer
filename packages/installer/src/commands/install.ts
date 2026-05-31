@@ -23,6 +23,7 @@ import {
   type CodexWindowServicesSourceDiagnostics,
 } from "../codex-window-services.js";
 import { chownForTargetUser } from "../ownership.js";
+import { getOpenReport, type OpenReport } from "./debug.js";
 
 interface Opts {
   app?: string;
@@ -567,49 +568,47 @@ function macAppManagementFix(target: string, code: string | undefined): string {
   return permissionSteps + sudoFallback;
 }
 
-function preflightAppClosed(codex: CodexInstall): void {
-  if (codex.platform !== "win32") return;
+export function assertCodexNotRunning(
+  codex: CodexInstall,
+  open: OpenReport = getOpenReport(codex),
+): void {
+  if (open.status === "closed") return;
 
-  const exePath = codex.executable;
-  const processName = basename(exePath, ".exe");
-  try {
-    const out = execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        [
-          `$exe = '${escapePowerShellSingleQuotedString(exePath)}';`,
-          `$name = '${escapePowerShellSingleQuotedString(processName)}';`,
-          "$match = Get-Process -ErrorAction SilentlyContinue | Where-Object {",
-          "$path = $null; try { $path = $_.Path } catch {}",
-          "($path -and $path -ieq $exe) -or ($_.ProcessName -ieq $name)",
-          "} | Select-Object -First 1 Id, ProcessName, Path;",
-          "if ($match) { $match | ConvertTo-Json -Compress }",
-        ].join(" "),
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 },
-    ).trim();
-    if (!out) return;
-    const process = JSON.parse(out) as { Id?: unknown; ProcessName?: unknown; Path?: unknown };
-    const id = typeof process.Id === "number" ? process.Id : null;
-    const name = typeof process.ProcessName === "string" ? process.ProcessName : processName;
-    const path = typeof process.Path === "string" ? process.Path : exePath;
-    throw new Error(
-      `[!] Close Codex before patching\n\n` +
-        `Codex is currently running:\n` +
-        `  ${name}${id === null ? "" : ` (PID ${id})`}\n` +
-        `  ${path}\n\n` +
-        `Quit Codex completely, then rerun this command.\n` +
-        (id === null ? "" : `If it is stuck, run:\n  Stop-Process -Id ${id}\n`),
-    );
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("[!] Close Codex before patching")) {
-      throw error;
-    }
-  }
+  throw new Error(formatCodexRunningError(codex, open));
+}
+
+function formatCodexRunningError(codex: CodexInstall, open: OpenReport): string {
+  const status = open.status === "unknown" ? "running" : open.status;
+  const pid = open.pid === null ? "" : `\n  PID: ${open.pid}`;
+  const openedAt = open.openedAt ?? open.openedAtRaw;
+  const opened = openedAt ? `\n  Opened at: ${openedAt}` : "";
+  const related = formatRelatedPids(open.relatedPids);
+  const stuckCommand =
+    codex.platform === "win32" && open.pid !== null
+      ? `\nIf it is stuck, run:\n  Stop-Process -Id ${open.pid}\n`
+      : "";
+
+  return (
+    `[!] Close Codex before patching\n\n` +
+    `Codex is currently ${status}:\n` +
+    `  ${codex.appName}\n` +
+    `  ${codex.appRoot}${pid}${opened}${related}\n\n` +
+    `Codex++ cannot safely patch app.asar while Codex is running. ` +
+    `Changing the bundle underneath an active process can make lazy-loaded Codex surfaces crash until restart.\n\n` +
+    `Quit Codex completely, then rerun this command from Terminal.\n` +
+    stuckCommand
+  );
+}
+
+function formatRelatedPids(pids: number[]): string {
+  if (pids.length === 0) return "";
+  const shown = pids.slice(0, 12).join(", ");
+  const more = pids.length > 12 ? `, +${pids.length - 12} more` : "";
+  return `\n  Related PIDs: ${shown}${more}`;
+}
+
+function preflightAppClosed(codex: CodexInstall): void {
+  assertCodexNotRunning(codex);
 }
 
 function escapePowerShellSingleQuotedString(value: string): string {
