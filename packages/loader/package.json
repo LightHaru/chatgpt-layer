@@ -3,7 +3,7 @@
     "build": "node -e \"\""
   },
   "name": "@codex-plusplus/loader",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "private": true,
   "description": "Tiny stub injected into app.asar; bootstraps the runtime from the user dir.",
   "main": "loader.cjs"
