@@ -5,9 +5,9 @@ can change UI, add settings pages, run main-process code, and use native
 OS-level features through the Codex++ bridge.
 [Join the Discord community](https://discord.gg/6bY6gGX36H).
 
-> Unofficial project. Not affiliated with OpenAI. Use at your own risk.
-
 <img width="1413" height="1016" alt="Codex++ settings screenshot" src="https://github.com/user-attachments/assets/ea0b2ffc-c30d-4f68-ae12-dd8d6a997b2f" />
+
+> Unofficial project. Not affiliated with OpenAI. Use at your own risk.
 
 ## TL;DR
 
@@ -42,6 +42,13 @@ processes, and tweak-owned native modules.
 - [More Docs](#more-docs)
 
 ## Install
+
+Agentic install, from Codex:
+
+```text
+Inspect and install this for me: https://github.com/b-nnett/codex-plusplus
+Tell me where you install it and send me the local path for adding new tweaks.
+```
 
 Homebrew:
 
