@@ -1412,7 +1412,9 @@ function startInstalledCli(cli: string, args: string[]): void {
 
 function startInstalledCliWithLaunchd(cli: string, args: string[]): boolean {
   const label = `com.codexplusplus.patch-helper.${process.pid}.${Date.now()}`;
+  const cleanup = `launchctl remove ${label} >/dev/null 2>&1 || launchctl bootout gui/$(id -u)/${label} >/dev/null 2>&1 || true`;
   const command = [
+    `trap ${shellQuote(cleanup)} EXIT`,
     `cd ${shellQuote(resolve(dirname(cli), "..", "..", ".."))}`,
     `CODEX_PLUSPLUS_MANUAL_UPDATE=1 ${[process.execPath, cli, ...args].map(shellQuote).join(" ")}`,
   ].join(" && ");
