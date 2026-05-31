@@ -1,12 +1,9 @@
 # Codex++
 
-[Join the Discord community](https://discord.gg/6bY6gGX36H)
-
 Codex++ lets you install local tweaks into the OpenAI Codex desktop app. Tweaks
-can change UI, add settings pages, run main-process code, expose MCP servers,
-and use native macOS capabilities through the Codex++ bridge.
-
-Version: `1.0.0`
+can change UI, add settings pages, run main-process code, and use native
+OS-level features through the Codex++ bridge.
+[Join the Discord community](https://discord.gg/6bY6gGX36H).
 
 > Unofficial project. Not affiliated with OpenAI. Use at your own risk.
 
