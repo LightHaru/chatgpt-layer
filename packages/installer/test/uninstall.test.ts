@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { chooseRestorePlan, cleanupRuntimeAndState } from "../src/commands/uninstall";
+import { chooseRestorePlan, cleanupRuntimeAndState, purgeUserData } from "../src/commands/uninstall";
 
 test(
   "uninstall explains runtime cleanup permission failures",
@@ -52,6 +52,19 @@ test("uninstall skips app restore when the current app no longer looks patched",
 
   assert.equal(plan.kind, "skip");
   assert.match(plan.reason, /does not appear/);
+});
+
+test("purge removes all Codex++ user data", () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-uninstall-"));
+  mkdirSync(join(root, "tweaks", "example"), { recursive: true });
+  mkdirSync(join(root, "backup"), { recursive: true });
+  writeFileSync(join(root, "config.json"), "{}");
+  writeFileSync(join(root, "tweaks", "example", "manifest.json"), "{}");
+  writeFileSync(join(root, "backup", "app.asar"), "");
+
+  purgeUserData({ root });
+
+  assert.equal(existsSync(root), false);
 });
 
 test("uninstall prefers a full app backup for a patched macOS app", () => {

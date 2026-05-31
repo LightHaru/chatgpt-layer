@@ -132,6 +132,7 @@ Runtime flow:
 | `codexplusplus safe-mode` | Disable all tweaks without deleting them. |
 | `codexplusplus safe-mode --off` | Leave safe mode. |
 | `codexplusplus uninstall` | Remove Codex++ and restore the app when safe. |
+| `codexplusplus uninstall --purge` | Also delete tweaks, config, logs, backups, and Codex++ user data. |
 
 Tweak development commands:
 
@@ -312,6 +313,12 @@ Uninstall:
 
 ```sh
 codexplusplus uninstall
+```
+
+Clean uninstall, including tweaks/config/logs/backups:
+
+```sh
+codexplusplus uninstall --purge
 ```
 
 ## Security

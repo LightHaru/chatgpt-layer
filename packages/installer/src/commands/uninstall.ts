@@ -16,6 +16,7 @@ import type { CodexInstall } from "../platform.js";
 
 interface Opts {
   app?: string;
+  purge?: boolean;
 }
 
 export async function uninstall(opts: Opts = {}): Promise<void> {
@@ -67,12 +68,16 @@ export async function uninstall(opts: Opts = {}): Promise<void> {
   cleanupWindowsManagedArtifacts();
   console.log(kleur.green("Removed watcher."));
 
-  // Don't delete user tweaks/config — only installer state + runtime.
   cleanupRuntimeAndState(paths);
   console.log(kleur.green("Cleaned up runtime + state."));
-  console.log(
-    kleur.dim(`Your tweaks remain at ${paths.tweaks} (delete manually if you want).`),
-  );
+  if (opts.purge) {
+    purgeUserData(paths);
+    console.log(kleur.green("Removed Codex++ user data."));
+  } else {
+    console.log(
+      kleur.dim(`Your tweaks remain at ${paths.tweaks} (use --purge if you want a clean reset).`),
+    );
+  }
 }
 
 type RestorePlan =
@@ -246,6 +251,16 @@ export function cleanupRuntimeAndState(paths: Pick<ReturnType<typeof ensureUserP
     rmSync(paths.stateFile, { force: true });
   } catch (error) {
     throw cleanupPermissionError(error, paths.stateFile, "state file");
+  }
+}
+
+export function purgeUserData(paths: Pick<ReturnType<typeof ensureUserPaths>, "root">): void {
+  chownForTargetUser(paths.root, { recursive: true });
+
+  try {
+    rmSync(paths.root, { recursive: true, force: true });
+  } catch (error) {
+    throw cleanupPermissionError(error, paths.root, "user data directory");
   }
 }
 

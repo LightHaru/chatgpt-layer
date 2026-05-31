@@ -73,9 +73,7 @@ The uninstaller only restores files we backed up at install time. If you've upgr
 ## I want to start fresh
 
 ```sh
-codex-plusplus uninstall
-rm -rf ~/Library/Application\ Support/codex-plusplus
-# (XDG / APPDATA equivalents on Linux/Windows)
+codexplusplus uninstall --purge
 ```
 
-Then reinstall Codex.app from the official download.
+This removes the runtime, watcher, tweaks, config, logs, backups, and Codex++ user data. Then reinstall Codex.app from the official download.

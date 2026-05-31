@@ -508,7 +508,8 @@ function scheduleSettingsSurfaceHidden(): void {
   if (!state.settingsSurfaceVisible || state.settingsSurfaceHideTimer) return;
   state.settingsSurfaceHideTimer = setTimeout(() => {
     state.settingsSurfaceHideTimer = null;
-    if (findSidebarItemsGroup()) return;
+    const sidebar = findSidebarItemsGroup();
+    if (sidebar && isSettingsSidebarCandidate(sidebar)) return;
     if (isSettingsTextVisible()) return;
     setSettingsSurfaceVisible(false, "sidebar-not-found");
   }, 1500);
@@ -567,6 +568,55 @@ const CODEXPP_EXTENDED_SETTINGS_LABELS = [
   "Skills",
 ].map(normalizeCodexPpSettingsLabel);
 
+const CODEXPP_SETTINGS_ONLY_LABELS = [
+  "General",
+  "常规",
+  "通用",
+  "Appearance",
+  "外观",
+  "Configuration",
+  "配置",
+  "默认权限",
+  "Personalization",
+  "个性化",
+  "Keyboard shortcuts",
+  "Archived chats",
+  "Usage",
+  "Computer use",
+  "Browser use",
+  "MCP servers",
+  "MCP Servers",
+  "MCP 服务器",
+  "Git",
+  "Environments",
+  "环境",
+  "Cloud Environments",
+  "Worktrees",
+  "Connections",
+].map(normalizeCodexPpSettingsLabel);
+
+const CODEXPP_MAIN_APP_NAV_LABELS = [
+  "New chat",
+  "Quick chat",
+  "快速对话",
+  "Search",
+  "搜索",
+  "Plugins",
+  "插件",
+  "Automations",
+  "Automation",
+  "自动化",
+  "Chats",
+  "Chat",
+  "对话",
+  "Projects",
+  "项目",
+  "Pinned",
+  "Settings",
+  "设置",
+  "Work locally",
+].map(normalizeCodexPpSettingsLabel);
+
 function normalizeCodexPpSettingsLabel(value: string): string {
   return compactSettingsText(value)
     .toLocaleLowerCase()
@@ -606,15 +656,37 @@ function codexPpSettingsLabelScore(labels: string[]): { core: number; total: num
 
   for (const label of labels) {
     for (const marker of CODEXPP_CORE_SETTINGS_LABELS) {
-      if (label === marker || label.includes(marker)) core.add(marker);
+      if (codexPpLabelMatchesMarker(label, marker)) core.add(marker);
     }
 
     for (const marker of CODEXPP_EXTENDED_SETTINGS_LABELS) {
-      if (label === marker || label.includes(marker)) total.add(marker);
+      if (codexPpLabelMatchesMarker(label, marker)) total.add(marker);
     }
   }
 
   return { core: core.size, total: total.size };
+}
+
+function codexPpLabelMatchesMarker(label: string, marker: string): boolean {
+  return label === marker || label.includes(marker);
+}
+
+function codexPpMarkerCount(labels: string[], markers: string[]): number {
+  const matched = new Set<string>();
+  for (const label of labels) {
+    for (const marker of markers) {
+      if (codexPpLabelMatchesMarker(label, marker)) matched.add(marker);
+    }
+  }
+  return matched.size;
+}
+
+function hasCodexPpSettingsOnlySignal(labels: string[]): boolean {
+  return codexPpMarkerCount(labels, CODEXPP_SETTINGS_ONLY_LABELS) > 0;
+}
+
+function hasMainAppSidebarSignals(labels: string[]): boolean {
+  return codexPpMarkerCount(labels, CODEXPP_MAIN_APP_NAV_LABELS) >= 2;
 }
 
 function isCodexPpSettingsLabelSet(labels: string[]): boolean {
@@ -2920,7 +2992,12 @@ function isSettingsSidebarCandidate(el: HTMLElement): boolean {
   if (rect.height < 80) return false;
   if (rect.left > window.innerWidth * 0.65) return false;
 
-  return isCodexPpSettingsLabelSet(codexPpSettingsLabelsFrom(el));
+  const labels = codexPpSettingsLabelsFrom(el);
+  if (hasMainAppSidebarSignals(labels) && !hasCodexPpSettingsOnlySignal(labels)) {
+    return false;
+  }
+
+  return isCodexPpSettingsLabelSet(labels);
 }
 
 function removeMisplacedSettingsGroups(): void {
@@ -2928,14 +3005,41 @@ function removeMisplacedSettingsGroups(): void {
     "[data-codexpp='nav-group'], [data-codexpp='pages-group'], [data-codexpp='native-nav-header']",
   );
   for (const group of Array.from(groups)) {
-    if (!isForbiddenSettingsSidebarSurface(group)) continue;
-    if (state.navGroup === group) state.navGroup = null;
-    if (state.pagesGroup === group) {
-      state.pagesGroup = null;
-      state.pagesGroupKey = null;
-    }
-    if (state.nativeNavHeader === group) state.nativeNavHeader = null;
+    if (isCodexPpInjectedSettingsGroupPlacementValid(group)) continue;
+    resetCodexPpInjectedSettingsGroupState(group);
     group.remove();
+  }
+}
+
+function isCodexPpInjectedSettingsGroupPlacementValid(group: HTMLElement): boolean {
+  if (isForbiddenSettingsSidebarSurface(group)) return false;
+
+  let node = group.parentElement;
+  for (let depth = 0; node && depth < 4; depth++) {
+    if (isForbiddenSettingsSidebarSurface(node)) return false;
+    if (isSettingsSidebarCandidate(node)) return true;
+    node = node.parentElement;
+  }
+
+  return false;
+}
+
+function resetCodexPpInjectedSettingsGroupState(group: HTMLElement): void {
+  if (state.navGroup === group || (state.navGroup && group.contains(state.navGroup))) {
+    state.navGroup = null;
+    state.navButtons = null;
+    state.codexPlusPlusUpdateButton = null;
+  }
+  if (state.pagesGroup === group || (state.pagesGroup && group.contains(state.pagesGroup))) {
+    state.pagesGroup = null;
+    state.pagesGroupKey = null;
+    for (const p of state.pages.values()) p.navButton = null;
+  }
+  if (state.nativeNavHeader === group || (state.nativeNavHeader && group.contains(state.nativeNavHeader))) {
+    state.nativeNavHeader = null;
+  }
+  if (state.sidebarRoot && state.sidebarRoot.contains(group)) {
+    state.sidebarRoot = null;
   }
 }
 

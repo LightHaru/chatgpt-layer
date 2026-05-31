@@ -124,6 +124,7 @@ prog
   .command("uninstall")
   .describe("Restore Codex.app from backup and remove the watcher")
   .option("--app", "Path to Codex.app / install dir")
+  .option("--purge", "Delete tweaks, config, logs, backups, and Codex++ user data")
   .action(wrap(uninstall));
 
 prog
