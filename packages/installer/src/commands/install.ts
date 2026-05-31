@@ -24,6 +24,7 @@ import {
 } from "../codex-window-services.js";
 import { chownForTargetUser } from "../ownership.js";
 import { getOpenReport, type OpenReport } from "./debug.js";
+import { openCodex, promptRestartCodexToRepatch } from "../alerts.js";
 
 interface Opts {
   app?: string;
@@ -53,7 +54,7 @@ export async function install(opts: Opts = {}): Promise<void> {
     step("Skipping Electron fuse flip; Electron Framework binary was not found");
   }
   preflightSystemTools(codex.platform, resign, codex.metaPath !== null);
-  preflightAppClosed(codex);
+  const reopenAfterPatch = preflightAppClosed(codex);
 
   // Pre-flight every app-bundle target we will mutate so permission failures
   // surface before we patch app.asar or touch backups.
@@ -193,6 +194,10 @@ export async function install(opts: Opts = {}): Promise<void> {
     sourceRoot,
   });
   chownForTargetUser(paths.root, { recursive: true });
+  if (reopenAfterPatch) {
+    openCodex(codex.appRoot);
+    step("Reopened Codex");
+  }
 
   if (!opts.quiet) {
     console.log();
@@ -577,6 +582,28 @@ export function assertCodexNotRunning(
   throw new Error(formatCodexRunningError(codex, open));
 }
 
+export interface PrepareCodexForPatchingController {
+  getOpenReport?: (codex: CodexInstall) => OpenReport;
+  promptRestart?: (appRoot: string) => boolean;
+}
+
+export function prepareCodexForPatching(
+  codex: CodexInstall,
+  controller: PrepareCodexForPatchingController = {},
+): boolean {
+  const readOpenReport = controller.getOpenReport ?? getOpenReport;
+  const open = readOpenReport(codex);
+  if (open.status === "closed") return false;
+
+  const askRestart = controller.promptRestart ?? promptRestartCodexToRepatch;
+  if (codex.platform === "darwin" && askRestart(codex.appRoot)) {
+    assertCodexNotRunning(codex, readOpenReport(codex));
+    return true;
+  }
+
+  throw new Error(formatCodexRunningError(codex, open));
+}
+
 function formatCodexRunningError(codex: CodexInstall, open: OpenReport): string {
   const status = open.status === "unknown" ? "running" : open.status;
   const pid = open.pid === null ? "" : `\n  PID: ${open.pid}`;
@@ -607,8 +634,8 @@ function formatRelatedPids(pids: number[]): string {
   return `\n  Related PIDs: ${shown}${more}`;
 }
 
-function preflightAppClosed(codex: CodexInstall): void {
-  assertCodexNotRunning(codex);
+function preflightAppClosed(codex: CodexInstall): boolean {
+  return prepareCodexForPatching(codex);
 }
 
 function escapePowerShellSingleQuotedString(value: string): string {

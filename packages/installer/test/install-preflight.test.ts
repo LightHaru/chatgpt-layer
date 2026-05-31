@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   assertCodexNotRunning,
+  prepareCodexForPatching,
   preflightWritableTargets,
   shouldBackupUnpatchedApp,
   shouldFlipElectronFuse,
@@ -186,6 +187,59 @@ test("install preflight blocks patching while Codex is running", () => {
       } satisfies OpenReport);
     },
     /Close Codex before patching[\s\S]*Changing the bundle underneath an active process/,
+  );
+});
+
+test("install preflight restarts a running macOS Codex before patching", () => {
+  const reports: OpenReport[] = [
+    {
+      status: "inactive",
+      pid: 123,
+      relatedPids: [123, 456],
+      openedAt: "2026-05-31T11:35:54.000Z",
+      openedAtRaw: null,
+      detail: "Main Codex process is running but not frontmost.",
+    },
+    {
+      status: "closed",
+      pid: null,
+      relatedPids: [],
+      openedAt: null,
+      openedAtRaw: null,
+      detail: null,
+    },
+  ];
+  let prompted = false;
+  let reportIndex = 0;
+
+  const shouldReopen = prepareCodexForPatching(fakeCodex(), {
+    getOpenReport: () => reports[Math.min(reportIndex++, reports.length - 1)]!,
+    promptRestart: () => {
+      prompted = true;
+      return true;
+    },
+  });
+
+  assert.equal(prompted, true);
+  assert.equal(shouldReopen, true);
+});
+
+test("install preflight fails if Codex does not quit for restart patching", () => {
+  assert.throws(
+    () => {
+      prepareCodexForPatching(fakeCodex(), {
+        getOpenReport: () => ({
+          status: "inactive",
+          pid: 123,
+          relatedPids: [123],
+          openedAt: "2026-05-31T11:35:54.000Z",
+          openedAtRaw: null,
+          detail: "Main Codex process is running but not frontmost.",
+        }),
+        promptRestart: () => true,
+      });
+    },
+    /Close Codex before patching/,
   );
 });
 
