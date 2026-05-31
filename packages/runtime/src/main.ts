@@ -55,6 +55,7 @@ import {
   type TweakStoreRegistry,
   type TweakStorePlatform,
 } from "./tweak-store";
+import { maybeStartBrowserUiServer } from "./browser-ui";
 
 const userRoot = process.env.CODEX_PLUSPLUS_USER_ROOT;
 const runtimeDir = process.env.CODEX_PLUSPLUS_RUNTIME;
@@ -508,6 +509,10 @@ app.whenReady().then(() => {
     return;
   }
   registerPreload(session.defaultSession, "defaultSession");
+  maybeStartBrowserUiServer({
+    getWindowServices: getCodexWindowServices,
+    log,
+  });
 });
 
 app.on("session-created", (s) => {

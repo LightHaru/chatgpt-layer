@@ -8,6 +8,7 @@ import { updateCodex } from "./commands/update-codex.js";
 import { selfUpdate } from "./commands/self-update.js";
 import { status } from "./commands/status.js";
 import { debug } from "./commands/debug.js";
+import { browserUi } from "./commands/browser-ui.js";
 import { doctor } from "./commands/doctor.js";
 import { safeMode } from "./commands/safe-mode.js";
 import { CODEX_PLUSPLUS_VERSION } from "./version.js";
@@ -174,6 +175,15 @@ prog
   .describe("Show Codex install, runtime, data paths, and open state")
   .option("--app", "Path to Codex.app / install dir")
   .action(wrap(debug));
+
+prog
+  .command("browser")
+  .describe("Open the Codex React UI in a browser tab backed by a hidden Codex host")
+  .option("--app", "Path to Codex.app / install dir")
+  .option("--port", "Local browser UI port", 8765)
+  .option("--open", "Open the browser tab after launch", true)
+  .option("--keep-window", "Leave the Codex desktop window visible")
+  .action(wrap(browserUi));
 
 prog
   .command("doctor")
