@@ -65,6 +65,9 @@ function teardownTweakHost() {
         catch (e) {
             console.warn("[codex-plusplus] tweak stop failed:", id, e);
         }
+        finally {
+            void electron_1.ipcRenderer.invoke("codexpp:native-dispose-tweak", id).catch(() => { });
+        }
     }
     loaded.clear();
     (0, settings_injector_1.clearSections)();
@@ -172,7 +175,95 @@ function makeRendererApi(manifest, paths) {
             invoke: (c, ...args) => electron_1.ipcRenderer.invoke(`codexpp:${id}:${c}`, ...args),
         },
         fs: rendererFs(id, paths),
+        codex: rendererCodexApi(id),
     };
+}
+function rendererCodexApi(tweakId) {
+    return {
+        runtime: {
+            getInfo: async () => {
+                const info = await electron_1.ipcRenderer.invoke("codexpp:codex-runtime-info");
+                const bridge = rendererElectronBridge();
+                return {
+                    ...info,
+                    buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
+                    usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
+                };
+            },
+            getCapabilities: () => electron_1.ipcRenderer.invoke("codexpp:codex-runtime-capabilities"),
+        },
+        windows: {
+            create: (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", options),
+            getPrimary: () => electron_1.ipcRenderer.invoke("codexpp:codex-window-primary"),
+            focus: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-focus", windowId),
+            show: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-show", windowId),
+        },
+        cdp: {
+            getStatus: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-status"),
+            listTargets: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-targets"),
+        },
+        native: {
+            loadModule: async (options) => {
+                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-load-module", tweakId, options);
+                return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
+            },
+            createPanel: async (options) => {
+                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-create-panel", tweakId, options);
+                return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
+            },
+            attachView: async (options) => {
+                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-attach-view", tweakId, options);
+                return rendererNativeViewRef(tweakId, ref.id);
+            },
+            launchHelper: async (options) => {
+                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-launch-helper", tweakId, options);
+                return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
+            },
+        },
+        createBrowserView: (_options) => {
+            throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
+        },
+        createWindow: (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", options),
+    };
+}
+function rendererNativeModuleRef(tweakId, id, kind) {
+    return {
+        id,
+        kind,
+        request: (method, payload, timeoutMs) => electron_1.ipcRenderer.invoke("codexpp:native-module-request", tweakId, id, method, payload, timeoutMs),
+        dispose: () => electron_1.ipcRenderer.invoke("codexpp:native-module-dispose", tweakId, id),
+    };
+}
+function rendererNativePanelRef(tweakId, id, windowId) {
+    return {
+        id,
+        windowId,
+        setBounds: (bounds) => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "setBounds", bounds),
+        show: () => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "show"),
+        hide: () => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "hide"),
+        dispose: () => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "dispose"),
+    };
+}
+function rendererNativeViewRef(tweakId, id) {
+    return {
+        id,
+        setBounds: (bounds) => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "setBounds", bounds),
+        setVisible: (visible) => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "setVisible", visible),
+        dispose: () => electron_1.ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "dispose"),
+    };
+}
+function rendererNativeHelperRef(tweakId, id, pid) {
+    return {
+        id,
+        pid,
+        send: (message) => electron_1.ipcRenderer.invoke("codexpp:native-helper-call", tweakId, id, "send", message),
+        request: (message, timeoutMs) => electron_1.ipcRenderer.invoke("codexpp:native-helper-call", tweakId, id, "request", message, timeoutMs),
+        stop: () => electron_1.ipcRenderer.invoke("codexpp:native-helper-call", tweakId, id, "stop"),
+    };
+}
+function rendererElectronBridge() {
+    const value = window.electronBridge;
+    return value && typeof value === "object" ? value : null;
 }
 function rendererStorage(id) {
     const key = `codexpp:storage:${id}`;

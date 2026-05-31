@@ -60,7 +60,9 @@ That's it. The installer:
 2. Backs it up to `~/.codex-plusplus/backup/`.
 3. Patches `app.asar` to require our loader.
 4. Recomputes the asar header SHA-256 and writes it into `Info.plist` (`ElectronAsarIntegrity`).
-5. Flips `EnableEmbeddedAsarIntegrityValidation` in the Electron Framework binary as a belt-and-suspenders.
+5. Flips `EnableEmbeddedAsarIntegrityValidation` when an Electron Framework
+   binary is present; current Owl builds skip this because they use
+   `Codex Framework.framework`.
 6. Re-signs the app on macOS with a stable per-machine "Codex++ Local Signing" identity, creating it in the user keychain if needed.
 7. Installs a launch agent / login item that detects app updates and re-runs `repair --quiet`.
 
@@ -111,7 +113,7 @@ A tweak is a folder under `<user-data-dir>/tweaks/` with:
 ```
 my-tweak/
 ├── manifest.json
-└── index.js            # or .mjs / .ts (transpiled by runtime)
+└── index.js            # or index.cjs / index.mjs; bundle TypeScript yourself
 ```
 
 ```json
@@ -126,10 +128,8 @@ my-tweak/
 }
 ```
 
-```ts
-import type { Tweak } from "@codex-plusplus/sdk";
-
-export default {
+```js
+module.exports = {
   start(api) {
     api.settings.register({
       id: "my-tweak",
@@ -141,7 +141,7 @@ export default {
     api.log.info("started");
   },
   stop() {},
-} satisfies Tweak;
+};
 ```
 
 See [`docs/WRITING-TWEAKS.md`](./docs/WRITING-TWEAKS.md) for the full API.

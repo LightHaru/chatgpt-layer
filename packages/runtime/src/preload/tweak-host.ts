@@ -16,6 +16,20 @@ import { ipcRenderer } from "electron";
 import { registerSection, registerPage, clearSections, setListedTweaks } from "./settings-injector";
 import { fiberForNode } from "./react-hook";
 import type {
+  CodexCdpStatus,
+  CodexCdpTarget,
+  CodexRuntimeCapabilities,
+  CodexRuntimeInfo,
+  CodexWindowRef,
+  NativeHelperLaunchOptions,
+  NativeHelperRef,
+  NativeModuleKind,
+  NativeModuleLoadOptions,
+  NativeModuleRef,
+  NativePanelCreateOptions,
+  NativePanelRef,
+  NativeViewAttachOptions,
+  NativeViewRef,
   TweakManifest,
   TweakApi,
   ReactFiberNode,
@@ -45,6 +59,11 @@ interface UserPaths {
   runtimeDir: string;
   tweaksDir: string;
   logDir: string;
+}
+
+interface ElectronBridge {
+  getBuildFlavor?: () => string | null;
+  usesOwlAppShell?: () => boolean;
 }
 
 const loaded = new Map<string, { stop?: () => void }>();
@@ -102,6 +121,8 @@ export function teardownTweakHost(): void {
       t.stop?.();
     } catch (e) {
       console.warn("[codex-plusplus] tweak stop failed:", id, e);
+    } finally {
+      void ipcRenderer.invoke("codexpp:native-dispose-tweak", id).catch(() => {});
     }
   }
   loaded.clear();
@@ -219,7 +240,155 @@ function makeRendererApi(manifest: TweakManifest, paths: UserPaths): TweakApi {
         ipcRenderer.invoke(`codexpp:${id}:${c}`, ...args) as Promise<T>,
     },
     fs: rendererFs(id, paths),
+    codex: rendererCodexApi(id),
   };
+}
+
+function rendererCodexApi(tweakId: string): NonNullable<TweakApi["codex"]> {
+  return {
+    runtime: {
+      getInfo: async () => {
+        const info = await ipcRenderer.invoke("codexpp:codex-runtime-info") as CodexRuntimeInfo;
+        const bridge = rendererElectronBridge();
+        return {
+          ...info,
+          buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
+          usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
+        };
+      },
+      getCapabilities: () =>
+        ipcRenderer.invoke("codexpp:codex-runtime-capabilities") as Promise<CodexRuntimeCapabilities>,
+    },
+    windows: {
+      create: (options) =>
+        ipcRenderer.invoke("codexpp:codex-window-create", options) as Promise<CodexWindowRef>,
+      getPrimary: () =>
+        ipcRenderer.invoke("codexpp:codex-window-primary") as Promise<CodexWindowRef | null>,
+      focus: (windowId) =>
+        ipcRenderer.invoke("codexpp:codex-window-focus", windowId) as Promise<boolean>,
+      show: (windowId) =>
+        ipcRenderer.invoke("codexpp:codex-window-show", windowId) as Promise<boolean>,
+    },
+    cdp: {
+      getStatus: () =>
+        ipcRenderer.invoke("codexpp:codex-cdp-status") as Promise<CodexCdpStatus>,
+      listTargets: () =>
+        ipcRenderer.invoke("codexpp:codex-cdp-targets") as Promise<CodexCdpTarget[]>,
+    },
+    native: {
+      loadModule: async (options) => {
+        const ref = await ipcRenderer.invoke(
+          "codexpp:native-load-module",
+          tweakId,
+          options,
+        ) as { id: string; kind: NativeModuleKind };
+        return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
+      },
+      createPanel: async (options) => {
+        const ref = await ipcRenderer.invoke(
+          "codexpp:native-create-panel",
+          tweakId,
+          options,
+        ) as { id: string; windowId: number | null };
+        return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
+      },
+      attachView: async (options) => {
+        const ref = await ipcRenderer.invoke(
+          "codexpp:native-attach-view",
+          tweakId,
+          options,
+        ) as { id: string };
+        return rendererNativeViewRef(tweakId, ref.id);
+      },
+      launchHelper: async (options) => {
+        const ref = await ipcRenderer.invoke(
+          "codexpp:native-launch-helper",
+          tweakId,
+          options,
+        ) as { id: string; pid: number };
+        return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
+      },
+    },
+    createBrowserView: (_options) => {
+      throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
+    },
+    createWindow: (options) =>
+      ipcRenderer.invoke("codexpp:codex-window-create", options) as Promise<CodexWindowRef>,
+  };
+}
+
+function rendererNativeModuleRef(
+  tweakId: string,
+  id: string,
+  kind: NativeModuleKind,
+): NativeModuleRef {
+  return {
+    id,
+    kind,
+    request: (method, payload, timeoutMs) =>
+      ipcRenderer.invoke(
+        "codexpp:native-module-request",
+        tweakId,
+        id,
+        method,
+        payload,
+        timeoutMs,
+      ),
+    dispose: () =>
+      ipcRenderer.invoke("codexpp:native-module-dispose", tweakId, id) as Promise<void>,
+  };
+}
+
+function rendererNativePanelRef(tweakId: string, id: string, windowId: number | null): NativePanelRef {
+  return {
+    id,
+    windowId,
+    setBounds: (bounds) =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "setBounds", bounds) as Promise<void>,
+    show: () =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "show") as Promise<void>,
+    hide: () =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "hide") as Promise<void>,
+    dispose: () =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "panel", id, "dispose") as Promise<void>,
+  };
+}
+
+function rendererNativeViewRef(tweakId: string, id: string): NativeViewRef {
+  return {
+    id,
+    setBounds: (bounds) =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "setBounds", bounds) as Promise<void>,
+    setVisible: (visible) =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "setVisible", visible) as Promise<void>,
+    dispose: () =>
+      ipcRenderer.invoke("codexpp:native-instance-call", tweakId, "view", id, "dispose") as Promise<void>,
+  };
+}
+
+function rendererNativeHelperRef(tweakId: string, id: string, pid: number): NativeHelperRef {
+  return {
+    id,
+    pid,
+    send: (message) =>
+      ipcRenderer.invoke("codexpp:native-helper-call", tweakId, id, "send", message) as Promise<void>,
+    request: (message, timeoutMs) =>
+      ipcRenderer.invoke(
+        "codexpp:native-helper-call",
+        tweakId,
+        id,
+        "request",
+        message,
+        timeoutMs,
+      ),
+    stop: () =>
+      ipcRenderer.invoke("codexpp:native-helper-call", tweakId, id, "stop") as Promise<void>,
+  };
+}
+
+function rendererElectronBridge(): ElectronBridge | null {
+  const value = (window as unknown as { electronBridge?: unknown }).electronBridge;
+  return value && typeof value === "object" ? value as ElectronBridge : null;
 }
 
 function rendererStorage(id: string) {

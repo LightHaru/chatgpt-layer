@@ -1,6 +1,7 @@
 import kleur from "kleur";
+import asar from "@electron/asar";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join, sep } from "node:path";
 import { locateCodex, type CodexInstall } from "../platform.js";
@@ -16,6 +17,7 @@ type OpenStatus = "open" | "inactive" | "background" | "closed" | "unknown";
 export interface DebugReport {
   codex: CodexInstall;
   runtime: RuntimeReport;
+  owlBridge: OwlBridgeReport;
   codexDataPaths: DataPath[];
   codexPlusPlusPaths: DataPath[];
   open: OpenReport;
@@ -24,6 +26,19 @@ export interface DebugReport {
 export interface RuntimeReport {
   type: RuntimeType;
   evidence: string[];
+}
+
+export interface OwlBridgeReport {
+  runtimeProbe: string;
+  rendererBridge: string;
+  windowServices: string;
+  windowsCreate: string;
+  windowsPrimary: string;
+  cdp: string;
+  nativeModules: string;
+  nativePanels: string;
+  metalViews: string;
+  nativeHelpers: string;
 }
 
 export interface DataPath {
@@ -60,12 +75,15 @@ export async function debug(opts: DebugOpts = {}): Promise<void> {
 export function collectDebugReport(opts: DebugOpts = {}): DebugReport {
   const paths = userPaths();
   const codex = locateCodex(opts.app);
+  const runtime = detectRuntime(codex);
+  const open = getOpenReport(codex);
   return {
     codex,
-    runtime: detectRuntime(codex),
+    runtime,
+    owlBridge: collectOwlBridgeReport(codex, runtime, open, paths),
     codexDataPaths: codexDataPaths(codex),
     codexPlusPlusPaths: codexPlusPlusPaths(paths),
-    open: getOpenReport(codex),
+    open,
   };
 }
 
@@ -153,6 +171,44 @@ export function codexPlusPlusPaths(paths: UserPaths = userPaths()): DataPath[] {
     ["Log", paths.logDir],
     ["Bin", paths.binDir],
   ]);
+}
+
+export function collectOwlBridgeReport(
+  codex: CodexInstall,
+  runtime: RuntimeReport,
+  open: OpenReport,
+  paths: UserPaths = userPaths(),
+): OwlBridgeReport {
+  const windowServicesPatched = hasWindowServicesMarker(codex.asarPath);
+  const runtimeMain = join(paths.runtime, "main.js");
+  const hasNativeModules = runtimeFeature(runtimeMain, "codexpp:native-load-module");
+  const hasNativePanels = runtimeFeature(runtimeMain, "codexpp:native-create-panel");
+  const hasNativeViews = runtimeFeature(runtimeMain, "codexpp:native-attach-view");
+  const hasNativeHelpers = runtimeFeature(runtimeMain, "codexpp:native-launch-helper");
+  const hasNativeHost = existsSync(join(paths.runtime, "native", "codexpp_native_host.node"));
+  const cdp = probeCdp();
+  const isClosed = open.status === "closed";
+  const isOwl = runtime.type === "owl";
+  return {
+    runtimeProbe: runtime.type === "unknown" ? "unknown" : `ok (${runtime.type})`,
+    rendererBridge: isClosed
+      ? "unavailable (Codex closed)"
+      : cdp.enabled
+        ? "probeable via CDP"
+        : "unknown (CDP disabled)",
+    windowServices: windowServicesPatched ? "available" : "unavailable",
+    windowsCreate: windowServicesPatched ? "available" : "unavailable",
+    windowsPrimary: windowServicesPatched ? "available" : "unavailable",
+    cdp: cdp.enabled ? `enabled (${cdp.url})` : "supported, disabled",
+    nativeModules: hasNativeModules ? "available" : "unavailable",
+    nativePanels: hasNativePanels && hasNativeHost && isOwl && process.platform === "darwin"
+      ? "available"
+      : "unavailable",
+    metalViews: hasNativeViews && hasNativeHost && isOwl && process.platform === "darwin"
+      ? "available"
+      : "unavailable",
+    nativeHelpers: hasNativeHelpers ? "available" : "unavailable",
+  };
 }
 
 function existingAware(entries: [label: string, path: string][]): DataPath[] {
@@ -375,6 +431,44 @@ function macProcessUiState(pid: number): MacProcessUiState {
   }
 }
 
+function hasWindowServicesMarker(asarPath: string): boolean {
+  if (!existsSync(asarPath)) return false;
+  try {
+    const files = (asar as unknown as { listPackage: (path: string) => string[] }).listPackage(asarPath);
+    for (const file of files) {
+      if (!file.startsWith("/.vite/build/") || !file.endsWith(".js")) continue;
+      const source = asar.extractFile(asarPath, file.slice(1)).toString("utf8");
+      if (source.includes("__codexpp_window_services__")) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function runtimeFeature(runtimeMain: string, needle: string): boolean {
+  if (!existsSync(runtimeMain)) return false;
+  try {
+    return readFileSync(runtimeMain, "utf8").includes(needle);
+  } catch {
+    return false;
+  }
+}
+
+function probeCdp(): { enabled: boolean; url: string | null } {
+  const port = process.env.CODEXPP_REMOTE_DEBUG_PORT ?? "9222";
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    execFileSync("curl", ["-fsS", "--max-time", "0.5", `${url}/json/version`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return { enabled: true, url };
+  } catch {
+    return { enabled: false, url: null };
+  }
+}
+
 function printDebugReport(report: DebugReport): void {
   console.log(kleur.bold("codex-plusplus debug"));
   console.log();
@@ -395,6 +489,19 @@ function printDebugReport(report: DebugReport): void {
   for (const item of report.runtime.evidence) {
     console.log(`  evidence:     ${item}`);
   }
+  console.log();
+
+  console.log(kleur.bold("owl bridge"));
+  console.log(`  runtime probe:  ${bridgeLabel(report.owlBridge.runtimeProbe)}`);
+  console.log(`  renderer bridge:${bridgePad(report.owlBridge.rendererBridge)}`);
+  console.log(`  window services:${bridgePad(report.owlBridge.windowServices)}`);
+  console.log(`  windows.create: ${bridgeLabel(report.owlBridge.windowsCreate)}`);
+  console.log(`  windows.primary:${bridgePad(report.owlBridge.windowsPrimary)}`);
+  console.log(`  cdp:            ${bridgeLabel(report.owlBridge.cdp)}`);
+  console.log(`  native modules: ${bridgeLabel(report.owlBridge.nativeModules)}`);
+  console.log(`  native panels:  ${bridgeLabel(report.owlBridge.nativePanels)}`);
+  console.log(`  metal views:    ${bridgeLabel(report.owlBridge.metalViews)}`);
+  console.log(`  native helpers: ${bridgeLabel(report.owlBridge.nativeHelpers)}`);
   console.log();
 
   console.log(kleur.bold("open state"));
@@ -429,4 +536,18 @@ function openStatusLabel(status: OpenStatus): string {
   if (status === "background") return kleur.yellow(status);
   if (status === "closed") return kleur.dim(status);
   return kleur.yellow(status);
+}
+
+function bridgePad(value: string): string {
+  return ` ${bridgeLabel(value)}`;
+}
+
+function bridgeLabel(value: string): string {
+  if (value.startsWith("available") || value.startsWith("ok") || value.startsWith("enabled")) {
+    return kleur.green(value);
+  }
+  if (value.startsWith("supported") || value.startsWith("probeable") || value.startsWith("unknown")) {
+    return kleur.yellow(value);
+  }
+  return kleur.dim(value);
 }

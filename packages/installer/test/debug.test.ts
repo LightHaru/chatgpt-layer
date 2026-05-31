@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import asar from "@electron/asar";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  collectOwlBridgeReport,
   codexPlusPlusPaths,
   detectRuntime,
   parsePsOutput,
   type DataPath,
+  type OpenReport,
+  type RuntimeReport,
 } from "../src/commands/debug";
 import type { CodexInstall } from "../src/platform";
 import type { UserPaths } from "../src/paths";
@@ -92,6 +96,65 @@ test("codexPlusPlusPaths reports paths without creating them", () => {
   }
 });
 
+test("collectOwlBridgeReport reports install-time Owl bridge capabilities while Codex is closed", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-debug-"));
+  const previousPort = process.env.CODEXPP_REMOTE_DEBUG_PORT;
+  process.env.CODEXPP_REMOTE_DEBUG_PORT = "9";
+  try {
+    const codex = fakeMacCodex(root);
+    const src = join(root, "asar-src");
+    mkdirSync(join(src, ".vite", "build"), { recursive: true });
+    writeFileSync(
+      join(src, ".vite", "build", "main.js"),
+      "globalThis.__codexpp_window_services__ = services;",
+    );
+    await asar.createPackageWithOptions(src, codex.asarPath, {
+      globOptions: { dot: true },
+    });
+
+    const paths = fakeUserPaths(join(root, "user"));
+    mkdirSync(paths.runtime, { recursive: true });
+    mkdirSync(join(paths.runtime, "native"), { recursive: true });
+    writeFileSync(join(paths.runtime, "native", "codexpp_native_host.node"), "");
+    writeFileSync(
+      join(paths.runtime, "main.js"),
+      [
+        "codexpp:native-load-module",
+        "codexpp:native-create-panel",
+        "codexpp:native-attach-view",
+        "codexpp:native-launch-helper",
+      ].join("\n"),
+    );
+
+    const runtime: RuntimeReport = { type: "owl", evidence: [] };
+    const open: OpenReport = {
+      status: "closed",
+      pid: null,
+      relatedPids: [],
+      hasMainProcess: false,
+      openedAt: null,
+      openedAtRaw: null,
+      detail: null,
+    };
+    const report = collectOwlBridgeReport(codex, runtime, open, paths);
+
+    assert.equal(report.runtimeProbe, "ok (owl)");
+    assert.equal(report.rendererBridge, "unavailable (Codex closed)");
+    assert.equal(report.windowServices, "available");
+    assert.equal(report.windowsCreate, "available");
+    assert.equal(report.windowsPrimary, "available");
+    assert.equal(report.cdp, "supported, disabled");
+    assert.equal(report.nativeModules, "available");
+    assert.equal(report.nativeHelpers, "available");
+    assert.equal(report.nativePanels, process.platform === "darwin" ? "available" : "unavailable");
+    assert.equal(report.metalViews, process.platform === "darwin" ? "available" : "unavailable");
+  } finally {
+    if (previousPort === undefined) delete process.env.CODEXPP_REMOTE_DEBUG_PORT;
+    else process.env.CODEXPP_REMOTE_DEBUG_PORT = previousPort;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function fakeMacCodex(root: string): CodexInstall {
   const appRoot = join(root, "Codex.app");
   const resourcesDir = join(appRoot, "Contents", "Resources");
@@ -115,5 +178,20 @@ function fakeMacCodex(root: string): CodexInstall {
     bundleId: "com.openai.codex",
     channel: "stable",
     platform: "darwin",
+  };
+}
+
+function fakeUserPaths(root: string): UserPaths {
+  return {
+    root,
+    runtime: join(root, "runtime"),
+    tweaks: join(root, "tweaks"),
+    backup: join(root, "backup"),
+    configFile: join(root, "config.json"),
+    stateFile: join(root, "state.json"),
+    updateModeFile: join(root, "update-mode.json"),
+    selfUpdateStateFile: join(root, "self-update-state.json"),
+    binDir: join(root, "bin"),
+    logDir: join(root, "log"),
   };
 }

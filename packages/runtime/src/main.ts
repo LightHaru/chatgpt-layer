@@ -24,7 +24,24 @@ import {
   setTweakEnabledAndReload,
 } from "./tweak-lifecycle";
 import { appendCappedLog } from "./logging";
+import {
+  getCdpStatus,
+  getRuntimeCapabilities,
+  getRuntimeInfo,
+  listCdpTargets,
+} from "./codex-runtime-probe";
+import { NativeBridge, type NativeTweakContext } from "./native-bridge";
 import type { TweakManifest } from "@codex-plusplus/sdk";
+import type {
+  CodexRuntimeCapabilities,
+  CodexRuntimeInfo,
+  CodexWindowRef,
+  NativeHelperLaunchOptions,
+  NativeModuleLoadOptions,
+  NativePanelCreateOptions,
+  NativeViewAttachOptions,
+  TweakPermission,
+} from "@codex-plusplus/sdk";
 import {
   DEFAULT_TWEAK_STORE_INDEX_URL,
   normalizeGitHubRepo,
@@ -356,12 +373,14 @@ interface LoadedMainTweak {
 }
 
 interface CodexWindowServices {
+  createFreshWindow?: (route?: string) => Promise<Electron.BrowserWindow | null>;
   createFreshLocalWindow?: (route?: string) => Promise<Electron.BrowserWindow | null>;
   ensureHostWindow?: (hostId?: string) => Promise<Electron.BrowserWindow | null>;
   getPrimaryWindow?: (hostId?: string) => Electron.BrowserWindow | null;
   getContext?: (hostId: string) => { registerWindow?: (windowLike: CodexWindowLike) => void } | null;
   windowManager?: {
     createWindow?: (opts: Record<string, unknown>) => Promise<Electron.BrowserWindow | null>;
+    getPrimaryWindow?: () => Electron.BrowserWindow | null;
     registerWindow?: (
       windowLike: CodexWindowLike,
       hostId: string,
@@ -417,6 +436,10 @@ const tweakState = {
   discovered: [] as DiscoveredTweak[],
   loadedMain: new Map<string, LoadedMainTweak>(),
 };
+
+const nativeBridge = new NativeBridge(log, {
+  nativeHostPath: join(runtimeDir, "native", "codexpp_native_host.node"),
+});
 
 const tweakLifecycleDeps = {
   logInfo: (message: string) => log("info", message),
@@ -507,6 +530,7 @@ loadAllMainTweaks();
 
 app.on("will-quit", () => {
   stopAllMainTweaks();
+  nativeBridge.disposeAll();
   // Best-effort flush of any pending storage writes.
   for (const t of tweakState.loadedMain.values()) {
     try {
@@ -720,6 +744,74 @@ ipcMain.handle("codexpp:user-paths", () => ({
   logDir: LOG_DIR,
 }));
 
+ipcMain.handle("codexpp:codex-runtime-info", () => currentRuntimeInfo());
+ipcMain.handle("codexpp:codex-runtime-capabilities", () => currentRuntimeCapabilities());
+ipcMain.handle("codexpp:codex-cdp-status", () => getCdpStatus());
+ipcMain.handle("codexpp:codex-cdp-targets", () => listCdpTargets());
+ipcMain.handle("codexpp:codex-window-create", (_e, opts: CodexCreateWindowOptions) => {
+  return createCodexWindow(opts);
+});
+ipcMain.handle("codexpp:codex-window-primary", () => getPrimaryCodexWindowRef());
+ipcMain.handle("codexpp:codex-window-focus", (_e, windowId: number) => focusCodexWindow(windowId));
+ipcMain.handle("codexpp:codex-window-show", (_e, windowId: number) => showCodexWindow(windowId));
+ipcMain.handle(
+  "codexpp:native-load-module",
+  (_e, tweakId: string, options: NativeModuleLoadOptions) => {
+    const ref = nativeBridge.loadModule(tweakContext(tweakId, "native-module"), options);
+    return { id: ref.id, kind: ref.kind };
+  },
+);
+ipcMain.handle(
+  "codexpp:native-module-request",
+  (_e, tweakId: string, moduleId: string, method: string, payload?: unknown, timeoutMs?: number) => {
+    assertTweakPermissionForId(tweakId, "native-module");
+    return nativeBridge.requestModule(tweakId, moduleId, method, payload, timeoutMs);
+  },
+);
+ipcMain.handle("codexpp:native-module-dispose", (_e, tweakId: string, moduleId: string) => {
+  assertTweakPermissionForId(tweakId, "native-module");
+  return nativeBridge.disposeModule(tweakId, moduleId);
+});
+ipcMain.handle("codexpp:native-dispose-tweak", (_e, tweakId: string) => {
+  assertTweakId(tweakId);
+  nativeBridge.disposeTweak(tweakId);
+});
+ipcMain.handle(
+  "codexpp:native-create-panel",
+  async (_e, tweakId: string, options: NativePanelCreateOptions) => {
+    const ref = await nativeBridge.createPanel(tweakContext(tweakId, "native-view"), options);
+    return { id: ref.id, windowId: ref.windowId };
+  },
+);
+ipcMain.handle(
+  "codexpp:native-attach-view",
+  async (_e, tweakId: string, options: NativeViewAttachOptions) => {
+    const ref = await nativeBridge.attachView(tweakContext(tweakId, "native-view"), options);
+    return { id: ref.id };
+  },
+);
+ipcMain.handle(
+  "codexpp:native-instance-call",
+  async (_e, tweakId: string, kind: "panel" | "view", instanceId: string, method: string, arg?: unknown) => {
+    assertTweakPermissionForId(tweakId, "native-view");
+    return nativeBridge.callInstance(tweakId, kind, instanceId, method, arg);
+  },
+);
+ipcMain.handle(
+  "codexpp:native-launch-helper",
+  (_e, tweakId: string, options: NativeHelperLaunchOptions) => {
+    const ref = nativeBridge.launchHelper(tweakContext(tweakId, "native-helper"), options);
+    return { id: ref.id, pid: ref.pid };
+  },
+);
+ipcMain.handle(
+  "codexpp:native-helper-call",
+  (_e, tweakId: string, helperId: string, method: string, payload?: unknown, timeoutMs?: number) => {
+    assertTweakPermissionForId(tweakId, "native-helper");
+    return nativeBridge.callHelper(tweakId, helperId, method, payload, timeoutMs);
+  },
+);
+
 ipcMain.handle("codexpp:reveal", (_e, p: string) => {
   shell.openPath(p).catch(() => {});
 });
@@ -811,7 +903,7 @@ function loadAllMainTweaks(): void {
           storage,
           ipc: makeMainIpc(t.manifest.id),
           fs: makeMainFs(t.manifest.id),
-          codex: makeCodexApi(),
+          codex: makeCodexApi(t),
         });
         tweakState.loadedMain.set(t.manifest.id, {
           stop: tweak.stop,
@@ -853,6 +945,8 @@ function stopAllMainTweaks(): void {
       log("info", `stopped main tweak: ${id}`);
     } catch (e) {
       log("warn", `stop failed for ${id}:`, e);
+    } finally {
+      nativeBridge.disposeTweak(id);
     }
   }
   tweakState.loadedMain.clear();
@@ -1524,87 +1618,215 @@ function makeMainFs(id: string) {
   };
 }
 
-function makeCodexApi() {
+function currentRuntimeInfo(): CodexRuntimeInfo {
+  const installerState = readInstallerState();
+  return getRuntimeInfo({
+    userRoot: userRoot!,
+    runtimeDir: runtimeDir!,
+    codexVersion: installerState?.codexVersion ?? null,
+    channel: null,
+    getWindowServices: getCodexWindowServices,
+  });
+}
+
+function currentRuntimeCapabilities(): CodexRuntimeCapabilities {
+  const installerState = readInstallerState();
+  return getRuntimeCapabilities({
+    userRoot: userRoot!,
+    runtimeDir: runtimeDir!,
+    codexVersion: installerState?.codexVersion ?? null,
+    channel: null,
+    getWindowServices: getCodexWindowServices,
+    getNativeCapabilities: () => nativeBridge.getCapabilities(),
+  });
+}
+
+function tweakContext(tweakId: string, permission?: TweakPermission): NativeTweakContext {
+  const tweak = permission
+    ? assertTweakPermissionForId(tweakId, permission)
+    : tweakById(tweakId);
+  return { id: tweak.manifest.id, dir: tweak.dir };
+}
+
+function tweakById(tweakId: string): DiscoveredTweak {
+  assertTweakId(tweakId);
+  const tweak = tweakState.discovered.find((item) => item.manifest.id === tweakId);
+  if (!tweak) throw new Error(`unknown tweak: ${tweakId}`);
+  if (!isTweakEnabled(tweakId)) throw new Error(`tweak is disabled: ${tweakId}`);
+  return tweak;
+}
+
+function assertTweakPermissionForId(tweakId: string, permission: TweakPermission): DiscoveredTweak {
+  const tweak = tweakById(tweakId);
+  assertTweakPermission(tweak, permission);
+  return tweak;
+}
+
+function assertTweakPermission(tweak: DiscoveredTweak, permission: TweakPermission): void {
+  if (tweak.manifest.permissions?.includes(permission)) return;
+  throw new Error(`tweak ${tweak.manifest.id} must declare ${permission} permission`);
+}
+
+function assertTweakId(tweakId: string): void {
+  if (!/^[a-zA-Z0-9._-]+$/.test(tweakId)) throw new Error("bad tweak id");
+}
+
+function getPrimaryCodexWindow(): Electron.BrowserWindow | null {
+  const services = getCodexWindowServices();
+  const fromServices = typeof services?.getPrimaryWindow === "function"
+    ? services.getPrimaryWindow("local")
+    : null;
+  if (fromServices && !fromServices.isDestroyed()) return fromServices;
+  const fromManager = typeof services?.windowManager?.getPrimaryWindow === "function"
+    ? services.windowManager.getPrimaryWindow.call(services.windowManager)
+    : null;
+  if (fromManager && !fromManager.isDestroyed()) return fromManager;
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) return focused;
+  return BrowserWindow.getAllWindows().find((win) => !win.isDestroyed()) ?? null;
+}
+
+function getPrimaryCodexWindowRef(): CodexWindowRef | null {
+  const win = getPrimaryCodexWindow();
+  if (!win || win.isDestroyed()) return null;
+  return { windowId: win.id, webContentsId: win.webContents.id };
+}
+
+function focusCodexWindow(windowId: number): boolean {
+  const win = BrowserWindow.fromId(windowId);
+  if (!win || win.isDestroyed()) return false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  return true;
+}
+
+function showCodexWindow(windowId: number): boolean {
+  const win = BrowserWindow.fromId(windowId);
+  if (!win || win.isDestroyed()) return false;
+  win.show();
+  return true;
+}
+
+async function createCodexBrowserView(opts: CodexCreateViewOptions): Promise<unknown> {
+  const services = getCodexWindowServices();
+  const windowManager = services?.windowManager;
+  if (!services || !windowManager?.registerWindow) {
+    throw new Error(
+      "Codex embedded view services are not available. Reinstall Codex++ 1.0.0 or later.",
+    );
+  }
+
+  const route = normalizeCodexRoute(opts.route);
+  const hostId = opts.hostId || "local";
+  const appearance = opts.appearance || "secondary";
+  const view = new BrowserView({
+    webPreferences: {
+      preload: windowManager.options?.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      devTools: windowManager.options?.allowDevtools,
+    },
+  });
+  const windowLike = makeWindowLikeForView(view);
+  windowManager.registerWindow(windowLike, hostId, false, appearance);
+  services.getContext?.(hostId)?.registerWindow?.(windowLike);
+  await view.webContents.loadURL(codexAppUrl(route, hostId));
+  return view;
+}
+
+async function createCodexWindow(opts: CodexCreateWindowOptions): Promise<CodexWindowRef> {
+  const services = getCodexWindowServices();
+  if (!services) {
+    throw new Error(
+      "Codex window services are not available. Reinstall Codex++ 1.0.0 or later.",
+    );
+  }
+
+  const route = normalizeCodexRoute(opts.route);
+  const hostId = opts.hostId || "local";
+  const parent = typeof opts.parentWindowId === "number"
+    ? BrowserWindow.fromId(opts.parentWindowId)
+    : BrowserWindow.getFocusedWindow();
+  const createWindow = services.windowManager?.createWindow;
+
+  let win: Electron.BrowserWindow | null | undefined;
+  if (typeof createWindow === "function") {
+    win = await createWindow.call(services.windowManager, {
+      initialRoute: route,
+      hostId,
+      show: opts.show !== false,
+      appearance: opts.appearance || "secondary",
+      parent,
+    });
+  } else if (hostId === "local" && typeof services.createFreshWindow === "function") {
+    win = await services.createFreshWindow(route);
+  } else if (hostId === "local" && typeof services.createFreshLocalWindow === "function") {
+    win = await services.createFreshLocalWindow(route);
+  } else if (typeof services.ensureHostWindow === "function") {
+    win = await services.ensureHostWindow(hostId);
+  }
+
+  if (!win || win.isDestroyed()) {
+    throw new Error("Codex did not return a window for the requested route");
+  }
+
+  if (opts.bounds) {
+    win.setBounds(opts.bounds);
+  }
+  if (parent && !parent.isDestroyed()) {
+    try {
+      win.setParentWindow(parent);
+    } catch {}
+  }
+  if (opts.show !== false) {
+    win.show();
+  }
+
   return {
-    createBrowserView: async (opts: CodexCreateViewOptions) => {
-      const services = getCodexWindowServices();
-      const windowManager = services?.windowManager;
-      if (!services || !windowManager?.registerWindow) {
-        throw new Error(
-          "Codex embedded view services are not available. Reinstall Codex++ 0.1.1 or later.",
-        );
-      }
+    windowId: win.id,
+    webContentsId: win.webContents.id,
+  };
+}
 
-      const route = normalizeCodexRoute(opts.route);
-      const hostId = opts.hostId || "local";
-      const appearance = opts.appearance || "secondary";
-      const view = new BrowserView({
-        webPreferences: {
-          preload: windowManager.options?.preloadPath,
-          contextIsolation: true,
-          nodeIntegration: false,
-          spellcheck: false,
-          devTools: windowManager.options?.allowDevtools,
-        },
-      });
-      const windowLike = makeWindowLikeForView(view);
-      windowManager.registerWindow(windowLike, hostId, false, appearance);
-      services.getContext?.(hostId)?.registerWindow?.(windowLike);
-      await view.webContents.loadURL(codexAppUrl(route, hostId));
-      return view;
+function makeCodexApi(tweak: DiscoveredTweak) {
+  const ctx = (): NativeTweakContext => ({ id: tweak.manifest.id, dir: tweak.dir });
+  return {
+    runtime: {
+      getInfo: async () => currentRuntimeInfo(),
+      getCapabilities: async () => currentRuntimeCapabilities(),
     },
-
-    createWindow: async (opts: CodexCreateWindowOptions) => {
-      const services = getCodexWindowServices();
-      if (!services) {
-        throw new Error(
-          "Codex window services are not available. Reinstall Codex++ 0.1.1 or later.",
-        );
-      }
-
-      const route = normalizeCodexRoute(opts.route);
-      const hostId = opts.hostId || "local";
-      const parent = typeof opts.parentWindowId === "number"
-        ? BrowserWindow.fromId(opts.parentWindowId)
-        : BrowserWindow.getFocusedWindow();
-      const createWindow = services.windowManager?.createWindow;
-
-      let win: Electron.BrowserWindow | null | undefined;
-      if (typeof createWindow === "function") {
-        win = await createWindow.call(services.windowManager, {
-          initialRoute: route,
-          hostId,
-          show: opts.show !== false,
-          appearance: opts.appearance || "secondary",
-          parent,
-        });
-      } else if (hostId === "local" && typeof services.createFreshLocalWindow === "function") {
-        win = await services.createFreshLocalWindow(route);
-      } else if (typeof services.ensureHostWindow === "function") {
-        win = await services.ensureHostWindow(hostId);
-      }
-
-      if (!win || win.isDestroyed()) {
-        throw new Error("Codex did not return a window for the requested route");
-      }
-
-      if (opts.bounds) {
-        win.setBounds(opts.bounds);
-      }
-      if (parent && !parent.isDestroyed()) {
-        try {
-          win.setParentWindow(parent);
-        } catch {}
-      }
-      if (opts.show !== false) {
-        win.show();
-      }
-
-      return {
-        windowId: win.id,
-        webContentsId: win.webContents.id,
-      };
+    windows: {
+      create: createCodexWindow,
+      getPrimary: async () => getPrimaryCodexWindowRef(),
+      focus: async (windowId: number) => focusCodexWindow(windowId),
+      show: async (windowId: number) => showCodexWindow(windowId),
     },
+    cdp: {
+      getStatus: async () => getCdpStatus(),
+      listTargets: async () => listCdpTargets(),
+    },
+    native: {
+      loadModule: async (options: NativeModuleLoadOptions) => {
+        assertTweakPermission(tweak, "native-module");
+        return nativeBridge.loadModule(ctx(), options);
+      },
+      createPanel: async (options: NativePanelCreateOptions) => {
+        assertTweakPermission(tweak, "native-view");
+        return nativeBridge.createPanel(ctx(), options);
+      },
+      attachView: async (options: NativeViewAttachOptions) => {
+        assertTweakPermission(tweak, "native-view");
+        return nativeBridge.attachView(ctx(), options);
+      },
+      launchHelper: async (options: NativeHelperLaunchOptions) => {
+        assertTweakPermission(tweak, "native-helper");
+        return nativeBridge.launchHelper(ctx(), options);
+      },
+    },
+    createBrowserView: createCodexBrowserView,
+    createWindow: createCodexWindow,
   };
 }
 
