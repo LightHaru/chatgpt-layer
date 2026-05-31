@@ -2,11 +2,11 @@ import kleur from "kleur";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync, readdirSync, rmSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { locateCodex, type CodexInstall } from "../platform.js";
 import { ensureUserPaths } from "../paths.js";
-import { backupOnce, patchAsar, readHeaderHash } from "../asar.js";
+import { backupOnce, patchAsar, readFileInAsar, readHeaderHash } from "../asar.js";
 import { setIntegrity, getIntegrity } from "../integrity.js";
 import { writeFuse } from "../fuses.js";
 import { clearQuarantine, prepareCodeSigning, signCodexApp, signatureInfo } from "../codesign.js";
@@ -14,7 +14,6 @@ import { readPlist } from "../plist.js";
 import { writeState } from "../state.js";
 import { installWatcher, type WatcherKind } from "../watcher.js";
 import { CODEX_PLUSPLUS_VERSION } from "../version.js";
-import { installDefaultTweaks } from "../default-tweaks.js";
 import { formatCliShimResult, installCliShims } from "../cli-shim.js";
 import { findSourceRoot } from "../source-root.js";
 import {
@@ -24,6 +23,8 @@ import {
   type CodexWindowServicesSourceDiagnostics,
 } from "../codex-window-services.js";
 import { chownForTargetUser } from "../ownership.js";
+import { getOpenReport, type OpenReport } from "./debug.js";
+import { openCodex, quitCodex } from "../alerts.js";
 
 interface Opts {
   app?: string;
@@ -33,7 +34,7 @@ interface Opts {
   watcher?: boolean;
   watcherKind?: WatcherKind;
   quiet?: boolean;
-  defaultTweaks?: boolean;
+  verbose?: boolean;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -41,22 +42,26 @@ const assetsDir = resolve(here, "..", "..", "assets");
 const sourceRoot = findSourceRoot(here);
 
 export async function install(opts: Opts = {}): Promise<void> {
-  const fuseFlip = opts.fuse !== false;
+  const wantsFuseFlip = opts.fuse !== false;
   const resign = opts.resign !== false;
   let localSigning = opts.localSigning === true;
   const wantWatcher = opts.watcher !== false;
-  const wantDefaultTweaks = opts.defaultTweaks !== false;
 
-  const step = makeStepper(opts.quiet === true);
+  const step = makeStepper({ quiet: opts.quiet === true, verbose: opts.verbose === true });
   const codex = locateCodex(opts.app);
-  step(`Located Codex at ${kleur.cyan(codex.appRoot)}`);
+  const fuseFlip = shouldFlipElectronFuse(codex, wantsFuseFlip);
+  const codexVersion = readCodexVersion(codex.metaPath);
+  step(`Codex: ${kleur.cyan(codex.appRoot)}${codexVersion ? ` (${kleur.cyan(codexVersion)}, ${codex.channel})` : ` (${codex.channel})`}`);
+  if (wantsFuseFlip && !fuseFlip) {
+    step.detail("Skipping Electron fuse flip; Electron Framework binary was not found");
+  }
   preflightSystemTools(codex.platform, resign, codex.metaPath !== null);
-  preflightAppClosed(codex);
+  const reopenAfterPatch = preflightAppClosed(codex, step);
 
   // Pre-flight every app-bundle target we will mutate so permission failures
   // surface before we patch app.asar or touch backups.
   preflightWritableTargets(codex, { fuseFlip });
-  step("Bundle is writable");
+  step.detail("Bundle writable");
 
   let preparedSigning: ReturnType<typeof prepareCodeSigning> = null;
   if (resign && codex.platform === "darwin") {
@@ -73,13 +78,9 @@ export async function install(opts: Opts = {}): Promise<void> {
     }
   }
 
-  const codexVersion = readCodexVersion(codex.metaPath);
-  if (codexVersion) step(`Codex version: ${kleur.cyan(codexVersion)}`);
-  step(`Codex channel: ${kleur.cyan(codex.channel)}`);
-
   const paths = ensureUserPaths();
-  step(`User dir: ${kleur.cyan(paths.root)}`);
-  step(formatCliShimResult(installCliShims(paths.binDir)));
+  step.detail(`User dir: ${kleur.cyan(paths.root)}`);
+  step(formatCliStep(formatCliShimResult(installCliShims(paths.binDir))));
   const launcher = installWindowsManagedAppLauncher(codex);
   if (launcher) step(`Installed patched Codex++ launcher${launcher.shortcutPaths.length === 1 ? "" : "s"}: ${launcher.shortcutPaths.map((p) => kleur.cyan(p)).join(", ")}`);
 
@@ -89,30 +90,36 @@ export async function install(opts: Opts = {}): Promise<void> {
   const backupAsarUnpacked = join(paths.backup, "app.asar.unpacked");
   const backupPlist = codex.metaPath ? join(paths.backup, "Info.plist") : null;
   const backupFramework = join(paths.backup, "Electron Framework");
-  if (pristineAppBackup) backupPristineApp(codex.appRoot, pristineAppBackup, step);
+  let appBackupRefreshed = false;
+  if (pristineAppBackup) {
+    appBackupRefreshed = backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
+      hasPatchMarker: hasCodexPlusPlusAsarMarker(codex.asarPath),
+      step: step.detail,
+    });
+  }
   backupOnce(codex.asarPath, backupAsar);
   if (existsSync(`${codex.asarPath}.unpacked`)) {
     backupOnce(`${codex.asarPath}.unpacked`, backupAsarUnpacked);
   }
   if (codex.metaPath && backupPlist) backupOnce(codex.metaPath, backupPlist);
   if (fuseFlip) backupOnce(codex.electronBinary, backupFramework);
-  step("Backed up originals");
+  step(appBackupRefreshed ? "Backup refreshed" : "Backup ready");
 
   const { headerHash: originalAsarHash } = readHeaderHash(codex.asarPath);
 
   // 2. Stage runtime + loader into the user dir.
   stageAssets(paths.runtime);
-  step(`Staged runtime to ${kleur.cyan(paths.runtime)}`);
+  step("Runtime staged");
 
   // 3. Patch app.asar entry point to require our loader.
-  const originalEntry = await injectLoader(codex.asarPath, paths.root, step);
+  const originalEntry = await injectLoader(codex.asarPath, paths.root, step.detail);
   const { headerHash: patchedAsarHash } = readHeaderHash(codex.asarPath);
-  step(`Patched app.asar (entry was ${kleur.dim(originalEntry)})`);
+  step.detail(`Patched app.asar (entry was ${kleur.dim(originalEntry)})`);
 
   // 4. Update Info.plist hash so Electron's integrity check passes.
   if (codex.metaPath) {
     setIntegrity(codex, patchedAsarHash);
-    step(`Updated ElectronAsarIntegrity → ${kleur.dim(patchedAsarHash.slice(0, 12))}…`);
+    step.detail(`Updated ElectronAsarIntegrity → ${kleur.dim(patchedAsarHash.slice(0, 12))}…`);
   }
 
   // 5. Belt-and-suspenders: flip the integrity validation fuse off.
@@ -124,12 +131,13 @@ export async function install(opts: Opts = {}): Promise<void> {
         "EnableEmbeddedAsarIntegrityValidation",
         "off",
       );
-      step(`Fuse EnableEmbeddedAsarIntegrityValidation: ${r.from} → ${r.to}`);
+      step.detail(`Fuse EnableEmbeddedAsarIntegrityValidation: ${r.from} → ${r.to}`);
       fuseFlipped = true;
     } catch (e) {
       console.warn(kleur.yellow(`Fuse flip failed: ${(e as Error).message}`));
     }
   }
+  step("App patched");
 
   // 6. Re-sign on macOS.
   let resigned = false;
@@ -148,10 +156,10 @@ export async function install(opts: Opts = {}): Promise<void> {
     signingIdentityHash = signing?.identityHash;
     if (signing?.mode === "local-identity") {
       step(
-        `${signing.createdIdentity ? "Created and used" : "Used"} local signing identity ${kleur.cyan(signing.identity)}`,
+        `Signing: ${signing.createdIdentity ? "created local identity" : "local identity"} ${kleur.cyan(signing.identity)}`,
       );
     } else {
-      step("Re-signed ad-hoc");
+      step("Signing: ad-hoc");
     }
   }
 
@@ -160,18 +168,13 @@ export async function install(opts: Opts = {}): Promise<void> {
   if (wantWatcher) {
     try {
       watcher = installWatcher(codex.appRoot);
-      step(`Installed watcher (${watcher})`);
+      step(`Watcher: ${watcher}`);
     } catch (e) {
       console.warn(kleur.yellow(`Watcher install failed: ${(e as Error).message}`));
     }
   }
 
-  // 8. Seed default tweaks from their release channels.
-  if (wantDefaultTweaks) {
-    await installDefaultTweaks(paths.tweaks, step);
-  }
-
-  // 9. Persist state.
+  // 8. Persist state.
   writeState(paths.stateFile, {
     version: CODEX_PLUSPLUS_VERSION,
     installedAt: new Date().toISOString(),
@@ -191,17 +194,23 @@ export async function install(opts: Opts = {}): Promise<void> {
     sourceRoot,
   });
   chownForTargetUser(paths.root, { recursive: true });
+  if (reopenAfterPatch) {
+    openCodex(codex.appRoot, { detached: true, delayMs: 1_000 });
+    step("Codex reopened");
+  }
 
   if (!opts.quiet) {
     console.log();
     console.log(kleur.green().bold("✓ codex-plusplus installed."));
-    console.log(`  Tweaks dir: ${kleur.cyan(paths.tweaks)}`);
-    console.log(`  Logs:       ${kleur.cyan(paths.logDir)}`);
+    console.log(`  Tweaks: ${kleur.cyan(paths.tweaks)}`);
+    console.log(`  Logs:   ${kleur.cyan(paths.logDir)}`);
     if (launcher) {
       console.log(`  Launch ${kleur.cyan("Codex++")} from Start Menu or Desktop.`);
       console.log(`  Opening the Microsoft Store ${kleur.cyan("Codex")} app directly will launch the unpatched app.`);
     } else {
+      console.log();
       console.log(`  Launch Codex normally; the Tweaks tab will appear in Settings.`);
+      console.log();
     }
   }
 }
@@ -216,13 +225,42 @@ export function readCodexVersion(metaPath: string | null): string | null {
   }
 }
 
-function backupPristineApp(appRoot: string, backupPath: string, step: (msg: string) => void): void {
+export function shouldFlipElectronFuse(
+  codex: Pick<CodexInstall, "electronBinary">,
+  requested: boolean,
+): boolean {
+  return requested && existsSync(codex.electronBinary);
+}
+
+export function shouldBackupUnpatchedApp(input: { hasPatchMarker: boolean; signature: ReturnType<typeof signatureInfo> }): boolean {
+  if (input.hasPatchMarker) return false;
+  return input.signature.ok;
+}
+
+export function backupUnpatchedApp(
+  appRoot: string,
+  backupPath: string,
+  opts: { hasPatchMarker: boolean; step?: (msg: string) => void },
+): boolean {
   const sig = signatureInfo(appRoot);
-  if (!sig.ok || sig.adHoc || !sig.teamIdentifier) return;
+  if (!shouldBackupUnpatchedApp({ hasPatchMarker: opts.hasPatchMarker, signature: sig })) return false;
 
   rmSync(backupPath, { recursive: true, force: true });
   execFileSync("ditto", [appRoot, backupPath], { stdio: "ignore" });
-  step(`Backed up signed Codex.app to ${kleur.cyan(backupPath)}`);
+  opts.step?.(`Backed up unpatched Codex.app to ${kleur.cyan(backupPath)}`);
+  return true;
+}
+
+export function hasCodexPlusPlusAsarMarker(asarPath: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileInAsar(asarPath, "package.json").toString("utf8")) as {
+      main?: unknown;
+      __codexpp?: unknown;
+    };
+    return pkg.main === "codex-plusplus-loader.cjs" || typeof pkg.__codexpp === "object";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -329,14 +367,64 @@ function patchCodexWindowServices(
 }
 
 export function findCodexMainCandidates(appDir: string, originalMain: string): string[] {
-  const out = [resolve(appDir, originalMain)];
+  const originalPath = resolve(appDir, originalMain);
+  const out = existsSync(originalPath) ? [originalPath] : [];
   const buildDir = resolve(appDir, ".vite", "build");
+  const roots: Array<{ dir: string; recursive: boolean }> = [
+    { dir: appDir, recursive: false },
+    { dir: buildDir, recursive: true },
+  ];
+  const originalDir = dirname(originalPath);
+  if (originalDir !== appDir && !isSameOrInside(originalDir, buildDir)) {
+    roots.push({ dir: originalDir, recursive: true });
+  }
+
+  const discovered = roots
+    .flatMap((root) => collectJavaScriptFiles(root.dir, root.recursive))
+    .sort((a, b) => {
+      const rank = candidateRank(basename(a)) - candidateRank(basename(b));
+      if (rank !== 0) return rank;
+      const name = basename(a).localeCompare(basename(b));
+      if (name !== 0) return name;
+      return relative(appDir, a).localeCompare(relative(appDir, b));
+    });
+
+  const seen = new Set(out);
+  for (const candidate of discovered) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    out.push(candidate);
+  }
+  return out;
+}
+
+function candidateRank(name: string): number {
+  if (/^main(?:[-.].*)?\.js$/.test(name)) return 0;
+  if (/^bootstrap(?:[-.].*)?\.js$/.test(name)) return 1;
+  if (/^(app|desktop|src)(?:[-.].*)?\.js$/.test(name)) return 2;
+  if (/preload|worker|service/i.test(name)) return 4;
+  return 3;
+}
+
+function collectJavaScriptFiles(dir: string, recursive: boolean): string[] {
+  const out: string[] = [];
   try {
-    for (const name of readdirSync(buildDir)) {
-      if (/^main(?:[-.].*)?\.js$/.test(name)) out.push(resolve(buildDir, name));
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const target = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (recursive) out.push(...collectJavaScriptFiles(target, true));
+      } else if (entry.isFile() && entry.name.endsWith(".js")) {
+        out.push(target);
+      }
     }
   } catch {}
-  return [...new Set(out)].filter((p) => existsSync(p));
+  return out;
+}
+
+function isSameOrInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function formatWindowServicesHookFailure(
@@ -401,11 +489,25 @@ export function stageAssets(runtimeDir: string): void {
   );
 }
 
-function makeStepper(quiet = false) {
+interface Stepper {
+  (msg: string): void;
+  detail(msg: string): void;
+}
+
+function makeStepper(opts: { quiet?: boolean; verbose?: boolean } = {}): Stepper {
   let n = 1;
-  return (msg: string) => {
-    if (!quiet) console.log(`${kleur.dim(`[${n++}]`)} ${msg}`);
+  const emit = (msg: string) => {
+    if (!opts.quiet) console.log(`${kleur.dim(`[${n++}]`)} ${msg}`);
   };
+  const step = emit as Stepper;
+  step.detail = (msg: string) => {
+    if (opts.verbose) emit(msg);
+  };
+  return step;
+}
+
+function formatCliStep(message: string): string {
+  return message.replace(/^Installed CLI(?::)?/, "CLI");
 }
 
 export function preflightWritableTargets(
@@ -487,49 +589,74 @@ function macAppManagementFix(target: string, code: string | undefined): string {
   return permissionSteps + sudoFallback;
 }
 
-function preflightAppClosed(codex: CodexInstall): void {
-  if (codex.platform !== "win32") return;
+export function assertCodexNotRunning(
+  codex: CodexInstall,
+  open: OpenReport = getOpenReport(codex),
+): void {
+  if (open.status === "closed") return;
+  if (open.hasMainProcess === false) return;
 
-  const exePath = codex.executable;
-  const processName = basename(exePath, ".exe");
-  try {
-    const out = execFileSync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        [
-          `$exe = '${escapePowerShellSingleQuotedString(exePath)}';`,
-          `$name = '${escapePowerShellSingleQuotedString(processName)}';`,
-          "$match = Get-Process -ErrorAction SilentlyContinue | Where-Object {",
-          "$path = $null; try { $path = $_.Path } catch {}",
-          "($path -and $path -ieq $exe) -or ($_.ProcessName -ieq $name)",
-          "} | Select-Object -First 1 Id, ProcessName, Path;",
-          "if ($match) { $match | ConvertTo-Json -Compress }",
-        ].join(" "),
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 },
-    ).trim();
-    if (!out) return;
-    const process = JSON.parse(out) as { Id?: unknown; ProcessName?: unknown; Path?: unknown };
-    const id = typeof process.Id === "number" ? process.Id : null;
-    const name = typeof process.ProcessName === "string" ? process.ProcessName : processName;
-    const path = typeof process.Path === "string" ? process.Path : exePath;
-    throw new Error(
-      `[!] Close Codex before patching\n\n` +
-        `Codex is currently running:\n` +
-        `  ${name}${id === null ? "" : ` (PID ${id})`}\n` +
-        `  ${path}\n\n` +
-        `Quit Codex completely, then rerun this command.\n` +
-        (id === null ? "" : `If it is stuck, run:\n  Stop-Process -Id ${id}\n`),
-    );
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("[!] Close Codex before patching")) {
-      throw error;
-    }
+  throw new Error(formatCodexRunningError(codex, open));
+}
+
+export interface PrepareCodexForPatchingController {
+  getOpenReport?: (codex: CodexInstall) => OpenReport;
+  quitCodex?: (appRoot: string) => void;
+  step?: (msg: string) => void;
+}
+
+export function prepareCodexForPatching(
+  codex: CodexInstall,
+  controller: PrepareCodexForPatchingController = {},
+): boolean {
+  const readOpenReport = controller.getOpenReport ?? getOpenReport;
+  const open = readOpenReport(codex);
+  if (open.status === "closed") return false;
+  if (open.hasMainProcess === false) return false;
+
+  const quit = controller.quitCodex ?? quitCodex;
+  if (codex.platform === "darwin") {
+    controller.step?.("Codex is running; quitting it before patching");
+    quit(codex.appRoot);
+    assertCodexNotRunning(codex, readOpenReport(codex));
+    return true;
   }
+
+  throw new Error(formatCodexRunningError(codex, open));
+}
+
+function formatCodexRunningError(codex: CodexInstall, open: OpenReport): string {
+  const status = open.status === "unknown" ? "running" : open.status;
+  const pid = open.pid === null ? "" : `\n  PID: ${open.pid}`;
+  const openedAt = open.openedAt ?? open.openedAtRaw;
+  const opened = openedAt ? `\n  Opened at: ${openedAt}` : "";
+  const related = formatRelatedPids(open.relatedPids);
+  const stuckCommand =
+    codex.platform === "win32" && open.pid !== null
+      ? `\nIf it is stuck, run:\n  Stop-Process -Id ${open.pid}\n`
+      : "";
+
+  return (
+    `[!] Close Codex before patching\n\n` +
+    `Codex is currently ${status}:\n` +
+    `  ${codex.appName}\n` +
+    `  ${codex.appRoot}${pid}${opened}${related}\n\n` +
+    `Codex++ cannot safely patch app.asar while Codex is running. ` +
+    `Changing the bundle underneath an active process can make lazy-loaded Codex surfaces crash until restart.\n\n` +
+    `Quit Codex completely, then rerun this command from Terminal.\n` +
+    stuckCommand
+  );
+}
+
+function formatRelatedPids(pids: number[]): string {
+  if (pids.length === 0) return "";
+  const shown = pids.slice(0, 12).join(", ");
+  const more = pids.length > 12 ? `, +${pids.length - 12} more` : "";
+  return `\n  Related PIDs: ${shown}${more}`;
+}
+
+function preflightAppClosed(codex: CodexInstall, step: (msg: string) => void): boolean {
+  return prepareCodexForPatching(codex, { step });
 }
 
 function escapePowerShellSingleQuotedString(value: string): string {

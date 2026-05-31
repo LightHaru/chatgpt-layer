@@ -66,8 +66,15 @@ export type TweakPermission =
   | "filesystem"
   | "network"
   | "settings"
+  | "codex-runtime"
+  | "codex-windows"
+  | "codex-views"
+  | "codex-cdp"
   | "codex.windows"
-  | "codex.views";
+  | "codex.views"
+  | "native-module"
+  | "native-view"
+  | "native-helper";
 
 export const VALID_TWEAK_SCOPES = ["renderer", "main", "both"] as const;
 
@@ -76,8 +83,15 @@ export const VALID_TWEAK_PERMISSIONS = [
   "filesystem",
   "network",
   "settings",
+  "codex-runtime",
+  "codex-windows",
+  "codex-views",
+  "codex-cdp",
   "codex.windows",
   "codex.views",
+  "native-module",
+  "native-view",
+  "native-helper",
 ] as const;
 
 export interface TweakManifestIssue {
@@ -381,6 +395,17 @@ export interface TweakFs {
 }
 
 export interface CodexApi {
+  /** Runtime and capability metadata for the current Codex host. */
+  runtime: CodexRuntimeApi;
+  /** Stable window helpers over Codex/Owl private window services. */
+  windows: CodexWindowsApi;
+  /** Owl WebContentsView/BrowserView overlays inside Codex windows. */
+  views: CodexViewsApi;
+  /** Chrome DevTools Protocol status and target discovery. */
+  cdp: CodexCdpApi;
+  /** Native module, AppKit/Metal view, and helper-process bridge. */
+  native: CodexNativeApi;
+
   /**
    * Main-only: create an embedded BrowserView registered with Codex's host
    * context. The returned object is Electron's BrowserView in the main
@@ -397,6 +422,182 @@ export interface CodexApi {
    * chat UI instead of a detached shell.
    */
   createWindow(options: CodexCreateWindowOptions): Promise<CodexWindowRef>;
+}
+
+export type CodexRuntimeType = "owl" | "electron" | "unknown";
+
+export interface CodexRuntimeInfo {
+  type: CodexRuntimeType;
+  codexVersion: string | null;
+  channel: string | null;
+  buildFlavor: string | null;
+  usesOwlAppShell: boolean | null;
+  appPath: string | null;
+  resourcesPath: string | null;
+}
+
+export interface CodexRuntimeCapabilities {
+  windows: {
+    create: boolean;
+    focus: boolean;
+    primary: boolean;
+    browserView: boolean;
+  };
+  views: {
+    create: boolean;
+    privateViewTree: boolean;
+    webContentsView: boolean;
+    browserViewFallback: boolean;
+  };
+  cdp: {
+    supported: boolean;
+    enabled: boolean;
+    port: number | null;
+  };
+  native: {
+    inProcessModules: boolean;
+    swiftModules: boolean;
+    appKitEmbedding: boolean;
+    childWindowOverlay: boolean;
+    directViewAttach: boolean;
+    metalViews: boolean;
+    nativeHost: boolean;
+    helpers: boolean;
+  };
+}
+
+export interface CodexRuntimeApi {
+  getInfo(): Promise<CodexRuntimeInfo>;
+  getCapabilities(): Promise<CodexRuntimeCapabilities>;
+}
+
+export interface CodexWindowsApi {
+  create(options: CodexCreateWindowOptions): Promise<CodexWindowRef>;
+  getPrimary(): Promise<CodexWindowRef | null>;
+  focus(windowId: number): Promise<boolean>;
+  show(windowId: number): Promise<boolean>;
+}
+
+export interface CodexViewCreateOptions {
+  id?: string;
+  parentWindowId?: number;
+  route?: string;
+  url?: string;
+  hostId?: string;
+  appearance?: string;
+  bounds?: { x: number; y: number; width: number; height: number };
+  visible?: boolean;
+  backgroundColor?: string;
+  registerWithCodex?: boolean;
+}
+
+export interface CodexViewRef {
+  id: string;
+  webContentsId: number;
+  parentWindowId: number | null;
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+  setVisible(visible: boolean): Promise<void>;
+  bringToFront(): Promise<void>;
+  loadRoute(route: string, hostId?: string): Promise<void>;
+  loadUrl(url: string): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export interface CodexViewsApi {
+  create(options: CodexViewCreateOptions): Promise<CodexViewRef>;
+}
+
+export interface CodexCdpStatus {
+  supported: boolean;
+  enabled: boolean;
+  port: number | null;
+  url: string | null;
+}
+
+export interface CodexCdpTarget {
+  id: string;
+  type: string;
+  title?: string;
+  url: string;
+  webSocketDebuggerUrl?: string;
+}
+
+export interface CodexCdpApi {
+  getStatus(): Promise<CodexCdpStatus>;
+  listTargets(): Promise<CodexCdpTarget[]>;
+}
+
+export type NativeModuleKind = "node-addon" | "dylib" | "framework";
+
+export interface NativeModuleLoadOptions {
+  id: string;
+  path: string;
+  kind?: NativeModuleKind;
+  entrypoint?: string;
+}
+
+export interface NativeModuleRef {
+  id: string;
+  kind: NativeModuleKind;
+  request(method: string, payload?: unknown, timeoutMs?: number): Promise<unknown>;
+  dispose(): Promise<void>;
+}
+
+export interface NativePanelCreateOptions {
+  moduleId?: string;
+  factory?: string;
+  parentWindowId?: number;
+  bounds?: { x: number; y: number; width: number; height: number };
+  transparent?: boolean;
+  passthroughMouse?: boolean;
+}
+
+export interface NativePanelRef {
+  id: string;
+  windowId: number | null;
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+  show(): Promise<void>;
+  hide(): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export interface NativeViewAttachOptions {
+  moduleId?: string;
+  factory?: string;
+  parentWindowId: number;
+  bounds: { x: number; y: number; width: number; height: number };
+  zIndex?: number;
+}
+
+export interface NativeViewRef {
+  id: string;
+  setBounds(bounds: { x: number; y: number; width: number; height: number }): Promise<void>;
+  setVisible(visible: boolean): Promise<void>;
+  dispose(): Promise<void>;
+}
+
+export interface NativeHelperLaunchOptions {
+  id: string;
+  executable: string;
+  args?: string[];
+  env?: Record<string, string>;
+  transport?: "stdio" | "unix-socket";
+  restart?: "never" | "on-crash";
+}
+
+export interface NativeHelperRef {
+  id: string;
+  pid: number;
+  send(message: unknown): Promise<void>;
+  request(message: unknown, timeoutMs?: number): Promise<unknown>;
+  stop(): Promise<void>;
+}
+
+export interface CodexNativeApi {
+  loadModule(options: NativeModuleLoadOptions): Promise<NativeModuleRef>;
+  createPanel(options: NativePanelCreateOptions): Promise<NativePanelRef>;
+  attachView(options: NativeViewAttachOptions): Promise<NativeViewRef>;
+  launchHelper(options: NativeHelperLaunchOptions): Promise<NativeHelperRef>;
 }
 
 export interface CodexCreateWindowOptions {

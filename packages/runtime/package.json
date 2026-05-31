@@ -1,11 +1,11 @@
 {
   "name": "@codex-plusplus/runtime",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "type": "commonjs",
   "main": "dist/main.js",
   "description": "In-app runtime: discovers tweaks, injects settings UI, hot-reloads.",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node ./scripts/bundle-renderer.mjs"
+    "build": "tsc -p tsconfig.json && node ./scripts/bundle-renderer.mjs && node ./scripts/copy-native-host.mjs"
   },
   "dependencies": {
     "@codex-plusplus/sdk": "*",

@@ -363,9 +363,17 @@ function uninstallScheduledTask(): void {
 }
 
 function deleteScheduledTask(name: string): void {
-  try {
-    execFileSync("schtasks.exe", ["/Delete", "/F", "/TN", name], {
-      stdio: "ignore",
-    });
-  } catch {}
+  for (const taskName of [name, `\\${name}`]) {
+    try {
+      execFileSync("schtasks.exe", ["/End", "/TN", taskName], { stdio: "ignore" });
+    } catch {}
+    try {
+      execFileSync("schtasks.exe", ["/Change", "/Disable", "/TN", taskName], { stdio: "ignore" });
+    } catch {}
+    try {
+      execFileSync("schtasks.exe", ["/Delete", "/F", "/TN", taskName], {
+        stdio: "ignore",
+      });
+    } catch {}
+  }
 }

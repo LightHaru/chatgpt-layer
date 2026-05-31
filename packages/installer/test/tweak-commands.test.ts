@@ -11,7 +11,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildCliFailureIssueUrl, buildPatchFailureIssueUrl, isMacAppManagementError } from "../src/alerts";
+import {
+  buildCliFailureIssueUrl,
+  buildPatchFailureIssueUrl,
+  codexReopenScript,
+  isMacAppManagementError,
+} from "../src/alerts";
 import { findCodexMainCandidates } from "../src/commands/install";
 import { createTweak } from "../src/commands/create-tweak";
 import { devTweak } from "../src/commands/dev-tweak";
@@ -320,11 +325,23 @@ test("Codex main candidates include nested recovered Vite bundle files", () => {
     mkdirSync(buildDir, { recursive: true });
     writeFileSync(join(root, "bootstrap.js"), "");
     writeFileSync(join(buildDir, "main-abc123.js"), "");
+    writeFileSync(join(buildDir, "src-abc123.js"), "");
+    writeFileSync(join(buildDir, "app-session-abc123.js"), "");
     writeFileSync(join(buildDir, "renderer-abc123.js"), "");
+    writeFileSync(join(buildDir, "preload.js"), "");
+    mkdirSync(join(buildDir, "chunks"), { recursive: true });
+    writeFileSync(join(buildDir, "chunks", "main-window-services-abc123.js"), "");
+    writeFileSync(join(buildDir, "chunks", "worker-service-abc123.js"), "");
 
     assert.deepEqual(findCodexMainCandidates(root, "bootstrap.js"), [
       join(root, "bootstrap.js"),
       join(buildDir, "main-abc123.js"),
+      join(buildDir, "chunks", "main-window-services-abc123.js"),
+      join(buildDir, "app-session-abc123.js"),
+      join(buildDir, "src-abc123.js"),
+      join(buildDir, "renderer-abc123.js"),
+      join(buildDir, "preload.js"),
+      join(buildDir, "chunks", "worker-service-abc123.js"),
     ]);
   });
 });
@@ -347,6 +364,15 @@ test("CLI failure report URL includes command and environment details", () => {
   assert.match(url.searchParams.get("body") ?? "", /codesign not installed/);
   assert.match(url.searchParams.get("body") ?? "", /Codex\+\+:/);
   assert.match(url.searchParams.get("body") ?? "", /Node:/);
+});
+
+test("Codex reopen script launches by bundle id from a detached helper", () => {
+  const script = codexReopenScript("/Applications/Codex.app", "com.openai.codex", 1000);
+
+  assert.match(script, /delay 1\.00/);
+  assert.match(script, /\/usr\/bin\/open -b 'com\.openai\.codex'/);
+  assert.match(script, /\/usr\/bin\/open '\/Applications\/Codex\.app'/);
+  assert.match(script, /tell application id "com\.openai\.codex" to activate/);
 });
 
 test("App Management failures use the dedicated repair alert path", () => {

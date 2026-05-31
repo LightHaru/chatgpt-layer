@@ -68,7 +68,7 @@ export function signCodexApp(appRoot: string, opts: CodeSigningOptions = {}): Co
   execFileSync(
     "codesign",
     ["--force", "--deep", "--sign", signingIdentity, appRoot],
-    { stdio: "inherit" },
+    { stdio: ["ignore", "ignore", "pipe"] },
   );
 
   return localIdentity

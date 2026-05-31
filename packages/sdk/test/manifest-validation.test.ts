@@ -16,6 +16,27 @@ test("validateTweakManifest accepts a complete manifest", () => {
   assert.deepEqual(result.errors, []);
 });
 
+test("validateTweakManifest accepts Owl bridge permissions", () => {
+  const result = validateTweakManifest({
+    id: "com.example.native-tweak",
+    name: "Native Tweak",
+    version: "1.0.0",
+    githubRepo: "example/native-tweak",
+    permissions: [
+      "codex-runtime",
+      "codex-windows",
+      "codex-views",
+      "codex-cdp",
+      "native-module",
+      "native-view",
+      "native-helper",
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+});
+
 test("validateTweakManifest accepts a manifest MCP server", () => {
   const result = validateTweakManifest({
     id: "com.example.tweak",

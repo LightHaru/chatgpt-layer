@@ -179,6 +179,8 @@ interface InjectorState {
   /** Our "Codex++" nav group (Config/Tweaks). */
   navGroup: HTMLElement | null;
   navButtons: { config: HTMLButtonElement; tweaks: HTMLButtonElement; store: HTMLButtonElement } | null;
+  /** Sidebar update pill shown only when GitHub has a newer Codex++ release. */
+  codexPlusPlusUpdateButton: HTMLButtonElement | null;
   /** Our "Tweaks" nav group (per-tweak pages). Created lazily. */
   pagesGroup: HTMLElement | null;
   pagesGroupKey: string | null;
@@ -204,6 +206,7 @@ const state: InjectorState = {
   nativeNavHeader: null,
   navGroup: null,
   navButtons: null,
+  codexPlusPlusUpdateButton: null,
   pagesGroup: null,
   pagesGroupKey: null,
   panelHost: null,
@@ -426,8 +429,12 @@ function tryInject(): void {
 
   if (existingCodexPpNavGroup) {
     state.navGroup = existingCodexPpNavGroup;
+    state.codexPlusPlusUpdateButton = existingCodexPpNavGroup.querySelector<HTMLButtonElement>(
+      "[data-codexpp-sidebar-update]",
+    );
     state.sidebarRoot = outer;
     syncPagesGroup();
+    refreshSidebarCodexPlusPlusUpdateButton();
     if (state.activePage !== null) syncCodexNativeNavActive(true);
     return;
   }
@@ -437,7 +444,10 @@ function tryInject(): void {
   group.dataset.codexpp = "nav-group";
   group.className = "flex flex-col gap-px";
 
-  group.appendChild(sidebarGroupHeader("Codex++", "pt-3", sidebarReleasesPillButton()));
+  const updateButton = sidebarUpdatePillButton();
+  state.codexPlusPlusUpdateButton = updateButton;
+  group.appendChild(sidebarGroupHeader("Codex++", "pt-3", updateButton));
+  refreshSidebarCodexPlusPlusUpdateButton();
 
   // ── Sidebar items ────────────────────────────────────────────────────
   const configBtn = makeSidebarItem("Config", configIconSvg());
@@ -498,7 +508,8 @@ function scheduleSettingsSurfaceHidden(): void {
   if (!state.settingsSurfaceVisible || state.settingsSurfaceHideTimer) return;
   state.settingsSurfaceHideTimer = setTimeout(() => {
     state.settingsSurfaceHideTimer = null;
-    if (findSidebarItemsGroup()) return;
+    const sidebar = findSidebarItemsGroup();
+    if (sidebar && isSettingsSidebarCandidate(sidebar)) return;
     if (isSettingsTextVisible()) return;
     setSettingsSurfaceVisible(false, "sidebar-not-found");
   }, 1500);
@@ -557,6 +568,55 @@ const CODEXPP_EXTENDED_SETTINGS_LABELS = [
   "Skills",
 ].map(normalizeCodexPpSettingsLabel);
 
+const CODEXPP_SETTINGS_ONLY_LABELS = [
+  "General",
+  "常规",
+  "通用",
+  "Appearance",
+  "外观",
+  "Configuration",
+  "配置",
+  "默认权限",
+  "Personalization",
+  "个性化",
+  "Keyboard shortcuts",
+  "Archived chats",
+  "Usage",
+  "Computer use",
+  "Browser use",
+  "MCP servers",
+  "MCP Servers",
+  "MCP 服务器",
+  "Git",
+  "Environments",
+  "环境",
+  "Cloud Environments",
+  "Worktrees",
+  "Connections",
+].map(normalizeCodexPpSettingsLabel);
+
+const CODEXPP_MAIN_APP_NAV_LABELS = [
+  "New chat",
+  "Quick chat",
+  "快速对话",
+  "Search",
+  "搜索",
+  "Plugins",
+  "插件",
+  "Automations",
+  "Automation",
+  "自动化",
+  "Chats",
+  "Chat",
+  "对话",
+  "Projects",
+  "项目",
+  "Pinned",
+  "Settings",
+  "设置",
+  "Work locally",
+].map(normalizeCodexPpSettingsLabel);
+
 function normalizeCodexPpSettingsLabel(value: string): string {
   return compactSettingsText(value)
     .toLocaleLowerCase()
@@ -596,15 +656,37 @@ function codexPpSettingsLabelScore(labels: string[]): { core: number; total: num
 
   for (const label of labels) {
     for (const marker of CODEXPP_CORE_SETTINGS_LABELS) {
-      if (label === marker || label.includes(marker)) core.add(marker);
+      if (codexPpLabelMatchesMarker(label, marker)) core.add(marker);
     }
 
     for (const marker of CODEXPP_EXTENDED_SETTINGS_LABELS) {
-      if (label === marker || label.includes(marker)) total.add(marker);
+      if (codexPpLabelMatchesMarker(label, marker)) total.add(marker);
     }
   }
 
   return { core: core.size, total: total.size };
+}
+
+function codexPpLabelMatchesMarker(label: string, marker: string): boolean {
+  return label === marker || label.includes(marker);
+}
+
+function codexPpMarkerCount(labels: string[], markers: string[]): number {
+  const matched = new Set<string>();
+  for (const label of labels) {
+    for (const marker of markers) {
+      if (codexPpLabelMatchesMarker(label, marker)) matched.add(marker);
+    }
+  }
+  return matched.size;
+}
+
+function hasCodexPpSettingsOnlySignal(labels: string[]): boolean {
+  return codexPpMarkerCount(labels, CODEXPP_SETTINGS_ONLY_LABELS) > 0;
+}
+
+function hasMainAppSidebarSignals(labels: string[]): boolean {
+  return codexPpMarkerCount(labels, CODEXPP_MAIN_APP_NAV_LABELS) >= 2;
 }
 
 function isCodexPpSettingsLabelSet(labels: string[]): boolean {
@@ -1000,6 +1082,7 @@ function renderConfigPage(
 }
 
 function renderCodexPlusPlusConfig(card: HTMLElement, config: CodexPlusPlusConfig): void {
+  setSidebarCodexPlusPlusUpdateButton(config.updateCheck);
   card.appendChild(autoUpdateRow(config));
   card.appendChild(updateChannelRow(config));
   card.appendChild(installationSourceRow(config.installationSource));
@@ -1116,7 +1199,10 @@ function checkForUpdatesRow(config: CodexPlusPlusConfig): HTMLElement {
       row.style.opacity = "0.65";
       void ipcRenderer
         .invoke("codexpp:check-codexpp-update", true)
-        .then(() => refreshConfigCard(row))
+        .then((check) => {
+          setSidebarCodexPlusPlusUpdateButton(check as CodexPlusPlusUpdateCheck);
+          refreshConfigCard(row);
+        })
         .catch((e) => plog("Codex++ release check failed", String(e)))
         .finally(() => {
           row.style.opacity = "";
@@ -1130,7 +1216,10 @@ function checkForUpdatesRow(config: CodexPlusPlusConfig): HTMLElement {
       buttons.forEach((button) => (button.disabled = true));
       void ipcRenderer
         .invoke("codexpp:run-codexpp-update")
-        .then(() => refreshConfigCard(row))
+        .then(() => {
+          refreshSidebarCodexPlusPlusUpdateButton(true);
+          refreshConfigCard(row);
+        })
         .catch((e) => {
           plog("Codex++ self-update failed", String(e));
           void refreshConfigCard(row);
@@ -1892,12 +1981,14 @@ function storeEntryIconUrl(entry: TweakStoreEntryView): string | null {
   return `https://raw.githubusercontent.com/${entry.repo}/${entry.approvedCommitSha}/${rel}`;
 }
 
-function sidebarReleasesPillButton(): HTMLButtonElement {
+function sidebarUpdatePillButton(): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
+  btn.dataset.codexppSidebarUpdate = "true";
   btn.className =
     "user-select-none no-drag cursor-interaction inline-flex shrink-0 items-center justify-center whitespace-nowrap";
   Object.assign(btn.style, {
+    display: "none",
     height: "20px",
     borderRadius: "9999px",
     border: "0",
@@ -1912,7 +2003,7 @@ function sidebarReleasesPillButton(): HTMLButtonElement {
     boxShadow: "0 1px 2px rgba(0, 0, 0, 0.18)",
   });
   btn.textContent = "Update";
-  btn.title = "Open Codex++ releases";
+  btn.title = "Open Codex++ update";
   btn.addEventListener("mouseenter", () => {
     btn.style.background = "#0071E3";
   });
@@ -1922,9 +2013,34 @@ function sidebarReleasesPillButton(): HTMLButtonElement {
   btn.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    void ipcRenderer.invoke("codexpp:open-external", CODEX_PLUSPLUS_RELEASES_URL);
+    void ipcRenderer.invoke("codexpp:open-external", btn.dataset.codexppReleaseUrl || CODEX_PLUSPLUS_RELEASES_URL);
   });
   return btn;
+}
+
+function refreshSidebarCodexPlusPlusUpdateButton(force = false): void {
+  const btn = state.codexPlusPlusUpdateButton;
+  if (!btn) return;
+  void ipcRenderer
+    .invoke("codexpp:check-codexpp-update", force)
+    .then((check) => setSidebarCodexPlusPlusUpdateButton(check as CodexPlusPlusUpdateCheck))
+    .catch((e) => {
+      plog("Codex++ sidebar release check failed", String(e));
+      setSidebarCodexPlusPlusUpdateButton(null);
+    });
+}
+
+function setSidebarCodexPlusPlusUpdateButton(check: CodexPlusPlusUpdateCheck | null): void {
+  const btn = state.codexPlusPlusUpdateButton;
+  if (!btn) return;
+  const updateAvailable = check?.updateAvailable === true;
+  btn.style.display = updateAvailable ? "inline-flex" : "none";
+  btn.hidden = !updateAvailable;
+  btn.dataset.codexppReleaseUrl = check?.releaseUrl || CODEX_PLUSPLUS_RELEASES_URL;
+  btn.title =
+    updateAvailable && check?.latestVersion
+      ? `Open Codex++ ${check.latestVersion} update`
+      : "Open Codex++ update";
 }
 
 function updateStoreUpdateBadge(count: number | null): void {
@@ -2876,7 +2992,12 @@ function isSettingsSidebarCandidate(el: HTMLElement): boolean {
   if (rect.height < 80) return false;
   if (rect.left > window.innerWidth * 0.65) return false;
 
-  return isCodexPpSettingsLabelSet(codexPpSettingsLabelsFrom(el));
+  const labels = codexPpSettingsLabelsFrom(el);
+  if (hasMainAppSidebarSignals(labels) && !hasCodexPpSettingsOnlySignal(labels)) {
+    return false;
+  }
+
+  return isCodexPpSettingsLabelSet(labels);
 }
 
 function removeMisplacedSettingsGroups(): void {
@@ -2884,14 +3005,41 @@ function removeMisplacedSettingsGroups(): void {
     "[data-codexpp='nav-group'], [data-codexpp='pages-group'], [data-codexpp='native-nav-header']",
   );
   for (const group of Array.from(groups)) {
-    if (!isForbiddenSettingsSidebarSurface(group)) continue;
-    if (state.navGroup === group) state.navGroup = null;
-    if (state.pagesGroup === group) {
-      state.pagesGroup = null;
-      state.pagesGroupKey = null;
-    }
-    if (state.nativeNavHeader === group) state.nativeNavHeader = null;
+    if (isCodexPpInjectedSettingsGroupPlacementValid(group)) continue;
+    resetCodexPpInjectedSettingsGroupState(group);
     group.remove();
+  }
+}
+
+function isCodexPpInjectedSettingsGroupPlacementValid(group: HTMLElement): boolean {
+  if (isForbiddenSettingsSidebarSurface(group)) return false;
+
+  let node = group.parentElement;
+  for (let depth = 0; node && depth < 4; depth++) {
+    if (isForbiddenSettingsSidebarSurface(node)) return false;
+    if (isSettingsSidebarCandidate(node)) return true;
+    node = node.parentElement;
+  }
+
+  return false;
+}
+
+function resetCodexPpInjectedSettingsGroupState(group: HTMLElement): void {
+  if (state.navGroup === group || (state.navGroup && group.contains(state.navGroup))) {
+    state.navGroup = null;
+    state.navButtons = null;
+    state.codexPlusPlusUpdateButton = null;
+  }
+  if (state.pagesGroup === group || (state.pagesGroup && group.contains(state.pagesGroup))) {
+    state.pagesGroup = null;
+    state.pagesGroupKey = null;
+    for (const p of state.pages.values()) p.navButton = null;
+  }
+  if (state.nativeNavHeader === group || (state.nativeNavHeader && group.contains(state.nativeNavHeader))) {
+    state.nativeNavHeader = null;
+  }
+  if (state.sidebarRoot && state.sidebarRoot.contains(group)) {
+    state.sidebarRoot = null;
   }
 }
 

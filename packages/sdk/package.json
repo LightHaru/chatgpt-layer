@@ -1,6 +1,6 @@
 {
   "name": "@codex-plusplus/sdk",
-  "version": "0.1.7",
+  "version": "1.0.0",
   "description": "Public types and helpers for codex-plusplus tweak authors",
   "type": "module",
   "main": "dist/index.js",

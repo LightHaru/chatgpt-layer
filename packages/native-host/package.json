@@ -1,0 +1,11 @@
+{
+  "name": "@codex-plusplus/native-host",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "macOS native AppKit/Metal host for Codex++ Owl bridge",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "license": "MIT"
+}

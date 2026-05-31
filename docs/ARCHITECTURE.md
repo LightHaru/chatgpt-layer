@@ -8,8 +8,9 @@
 │  │   ├─ package.json   (main: codex-plusplus-loader.cjs)  ◄─ patched   │
 │  │   ├─ codex-plusplus-loader.cjs                          ◄─ injected │
 │  │   └─ <original Codex code …>                                         │
-│  ├─ Frameworks/Electron Framework.framework/.../Electron Framework      │
-│  │   └─ fuse: EnableEmbeddedAsarIntegrityValidation = off  ◄─ patched  │
+│  ├─ Frameworks/Codex Framework.framework/.../Codex Framework (Owl)      │
+│  │      or Electron Framework.framework on older builds                 │
+│  │   └─ optional Electron fuse patch on older Electron-style builds     │
 │  └─ Info.plist                                                          │
 │      └─ ElectronAsarIntegrity["Resources/app.asar"] = <new hash>  ◄─   │
 └────────────────────────────────────────────────────────────────────────┘
@@ -40,17 +41,14 @@ Tweak updates are deliberately advisory. `manifest.json` must include `githubRep
 
 The renderer only receives cached metadata (`latestVersion`, `releaseUrl`, `updateAvailable`) and can open the GitHub release for review. There is no automatic download, install, or replacement path in the runtime.
 
-## Default tweaks
-
-The installer seeds the default tweak set from external GitHub release tarballs instead of carrying their source in this repository. Existing local tweak folders are never overwritten. Pass `--no-default-tweaks` for a clean install with only the Codex++ runtime.
-
 ## Boot sequence
 
 1. User launches Codex.app.
 2. macOS verifies the (re-signed) ad-hoc signature → Gatekeeper allows launch.
-3. Electron reads `Info.plist` → checks asar integrity hash.
+3. The desktop runtime reads `Info.plist` → checks asar integrity hash.
    - The hash now matches the patched asar, so this passes.
-   - As belt-and-suspenders the `EnableEmbeddedAsarIntegrityValidation` fuse is off too.
+   - On older Electron-style bundles, the `EnableEmbeddedAsarIntegrityValidation`
+     fuse may also be off as a belt-and-suspenders measure.
 4. Electron loads the asar's `package.json#main`, which now points to `codex-plusplus-loader.cjs`.
 5. The loader (in the asar):
    - Reads `__codexpp.userRoot` from package.json.
@@ -58,7 +56,8 @@ The installer seeds the default tweak set from external GitHub release tarballs 
    - `require()`s `<userRoot>/runtime/main.js`.
    - `require()`s the original `__codexpp.originalMain` (Codex's real entry).
 6. Runtime's `main.js`:
-   - Registers our preload via `session.setPreloads()` (additive — Codex's own preload still runs).
+   - Registers our preload via Electron-compatible session APIs (additive —
+     Codex's own preload still runs).
    - Discovers tweaks under `<userRoot>/tweaks`.
    - Starts main-scoped tweaks immediately.
    - Sets up IPC handlers.
@@ -92,9 +91,21 @@ Codex is a Vite/Rollup build with a single entry chunk and no module registry ex
 
 So you can iterate on tweaks (and even on the runtime itself) without re-running the installer. The installer's job is the one-time "punch a hole in the bundle"; everything else lives outside.
 
-### Why `session.setPreloads()` instead of `webPreferences.preload`?
+### What about Owl?
 
-`webPreferences.preload` is a single string; setting it would replace Codex's own preload and break the app. `session.setPreloads()` is *additive* — it appends to whatever the renderer already has. Available since Electron 23+.
+Current Codex builds use Owl: a native Codex shell with a Chromium framework and
+an Electron-compatible JavaScript runtime. Codex++ still patches `app.asar` and
+still uses Electron-compatible APIs such as `app`, `BrowserWindow`, `session`,
+`ipcMain`, and `ipcRenderer`, but there is no `Electron Framework.framework` in
+the current macOS bundle. See [Owl runtime surface](./OWL-RUNTIME.md) for the
+observed private APIs.
+
+### Why additive session preloads instead of `webPreferences.preload`?
+
+`webPreferences.preload` is a single string; setting it would replace Codex's
+own preload and break the app. The runtime uses
+`session.registerPreloadScript()` when available and falls back to
+`session.setPreloads()` on older Electron-compatible builds.
 
 ## Update handling
 

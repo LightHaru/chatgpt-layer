@@ -1,25 +1,53 @@
 # Codex++
 
-[Join the Discord Community!](https://discord.gg/6bY6gGX36H)
+Codex++ lets you install local tweaks into the OpenAI Codex desktop app. Tweaks
+can change UI, add settings pages, run main-process code, and use native
+OS-level features through the Codex++ bridge.
+[Join the Discord community](https://discord.gg/6bY6gGX36H).
 
-A tweak system for the [Codex](https://chatgpt.com/codex) desktop app. Inject custom features, fix UI bugs, and add a tweak manager — without rebuilding the app.
+<img width="1413" height="1016" alt="Codex++ settings screenshot" src="https://github.com/user-attachments/assets/ea0b2ffc-c30d-4f68-ae12-dd8d6a997b2f" />
 
-> **Status:** ~~alpha~~ Beta! Confirmed working on both macOS & Windows. Expect bugs, especially around auto-updating and new Codex updates. PRs welcome.
+> Unofficial project. Not affiliated with OpenAI. Use at your own risk.
 
-<img width="1413" height="1016" alt="Screenshot 2026-04-28 at 19 42 56" src="https://github.com/user-attachments/assets/ea0b2ffc-c30d-4f68-ae12-dd8d6a997b2f" />
+## TL;DR
 
-## What it does
+Codex++ patches your local Codex app so Codex loads a small Codex++ runtime on
+startup.
 
-`codex-plusplus` patches your local Codex.app installation so a small **loader** runs on startup. The loader pulls a **runtime** from your user directory, which discovers and loads **tweaks** (small ESM modules with a manifest + `start/stop` lifecycle). The runtime injects a "Tweaks" tab into Codex's settings UI so you can enable, disable, and configure tweaks in-app.
+That runtime lives in your user data directory, not inside Codex. It finds
+tweaks in a local `tweaks/` folder and loads them when Codex opens.
 
-Everything beyond the one-time install patch lives **outside** the app bundle, so iterating on tweaks is just save-and-reload.
+The app patch is tiny. Your tweaks, config, logs, backups, and runtime files
+stay outside the app bundle, so you can edit tweaks without rebuilding Codex.
+
+When Codex updates, the patch is usually removed. Codex++ installs a watcher
+that notices this and re-applies the patch.
+
+1.0.0 adds cleaner patching, better debug output, Owl runtime detection,
+browser-host debugging, and native bridge support for AppKit, Metal, helper
+processes, and tweak-owned native modules.
+
+## Table Of Contents
+
+- [Install](#install)
+- [What Codex++ Is](#what-codex-is)
+- [How It Works](#how-it-works)
+- [Common Commands](#common-commands)
+- [Where Files Live](#where-files-live)
+- [Writing Tweaks](#writing-tweaks)
+- [Owl And Native Bridge](#owl-and-native-bridge)
+- [Browser Host Mode](#browser-host-mode)
+- [Updates And Recovery](#updates-and-recovery)
+- [Security](#security)
+- [More Docs](#more-docs)
 
 ## Install
 
-Agentic Install (via Codex):
+Agentic install, from Codex:
 
-```sh
-Inspect & install this for me: https://github.com/b-nnett/codex-plusplus, tell me where you install it and send me the local path for me to add new tweaks.
+```text
+Inspect and install this for me: https://github.com/b-nnett/codex-plusplus
+Tell me where you install it and send me the local path for adding new tweaks.
 ```
 
 Homebrew:
@@ -29,14 +57,7 @@ brew install b-nnett/codex-plusplus/codexplusplus
 codexplusplus install
 ```
 
-Bun:
-
-```sh
-bun install -g github:b-nnett/codex-plusplus
-codexplusplus install
-```
-
-Source bootstrap (macOS / Linux):
+GitHub source installer:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/b-nnett/codex-plusplus/main/install.sh | bash
@@ -48,77 +69,126 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/b-nnett/codex-plusplus/main/install.ps1 | iex
 ```
 
-On Windows, Codex is distributed through the Microsoft Store. Codex++ mirrors the
-Store app into a writable managed copy under `%LOCALAPPDATA%/codex-plusplus/`,
-patches that copy, and installs **Codex++** launchers in the Start Menu and on
-the Desktop. Launch **Codex++**, not the Microsoft Store **Codex** shortcut; the
-Store shortcut opens the unpatched app.
-
-That's it. The installer:
-
-1. Locates Codex (`/Applications/Codex.app` on macOS, or the Microsoft Store package on Windows).
-2. Backs it up to `~/.codex-plusplus/backup/`.
-3. Patches `app.asar` to require our loader.
-4. Recomputes the asar header SHA-256 and writes it into `Info.plist` (`ElectronAsarIntegrity`).
-5. Flips `EnableEmbeddedAsarIntegrityValidation` in the Electron Framework binary as a belt-and-suspenders.
-6. Re-signs the app on macOS with a stable per-machine "Codex++ Local Signing" identity, creating it in the user keychain if needed.
-7. Installs a launch agent / login item that detects app updates and re-runs `repair --quiet`.
-8. Installs the default tweak set from their latest GitHub releases unless `--no-default-tweaks` is passed.
-
-The watcher also runs hourly through the GitHub-installed local CLI. If a newer Codex++ GitHub release is available, it downloads the release, rebuilds the local CLI/runtime, and runs `repair` so the runtime in your user directory is refreshed without replacing tweak code. You can turn this off from Settings → Codex Plus Plus → Config.
-
-After source-bootstrap install, the installer adds `codexplusplus` and `codex-plusplus`
-to a writable PATH directory when possible. Use `codexplusplus` for day-to-day commands:
+Bun:
 
 ```sh
-codexplusplus status
-codexplusplus repair
-codexplusplus update
+bun install -g github:b-nnett/codex-plusplus
+codexplusplus install
 ```
 
-`codexplusplus update` downloads the latest Codex++ GitHub release, rebuilds it, and runs
-`repair`. If the command is not on PATH yet, rerun the source bootstrap once.
-Use `codexplusplus update --ref main` only when you intentionally want the current development branch instead of the latest release.
-On macOS, signing is ad-hoc by default. `codexplusplus install --local` and
-`codexplusplus repair --local` opt into a stable local signing identity.
+After install, launch Codex normally. Open Settings and look for the Codex++
+section.
 
-To revert:
+## What Codex++ Is
+
+Codex++ is a tweak loader for Codex Desktop.
+
+It gives you:
+
+- A local `tweaks/` folder.
+- A runtime that loads renderer and main-process tweaks.
+- A Codex++ Settings section inside Codex.
+- CLI tools for install, repair, update, debug, and tweak development.
+- A watcher that repairs Codex++ after Codex updates.
+- A public SDK for tweak authors.
+- Native bridge APIs for advanced macOS tweaks.
+
+It does not replace Codex, proxy your account, or run a separate Codex clone.
+It modifies your installed app so it can load local code.
+
+## How It Works
+
+Install flow:
+
+1. Codex++ finds your Codex app.
+2. It backs up the unpatched app files.
+3. It patches Codex `app.asar` so a Codex++ loader runs first.
+4. It stages the Codex++ runtime in your user data directory.
+5. It re-signs the app when needed.
+6. It installs a watcher for future Codex updates.
+
+Runtime flow:
+
+1. You launch Codex.
+2. The Codex++ loader starts.
+3. The loader starts the Codex++ runtime from disk.
+4. Codex starts normally.
+5. Codex++ discovers enabled tweaks.
+6. Renderer tweaks run in Codex windows.
+7. Main-process tweaks run in the Codex main process.
+8. The Settings UI shows Codex++ pages and tweak controls.
+
+## Common Commands
+
+| Command | What it does |
+|---|---|
+| `codexplusplus install` | Patch Codex and install the runtime. |
+| `codexplusplus status` | Show installed version and patch state. |
+| `codexplusplus debug` | Show app path, runtime type, paths, open state, and bridge status. |
+| `codexplusplus repair` | Re-apply the patch after an app update or broken install. |
+| `codexplusplus update` | Update Codex++ from the latest GitHub release. |
+| `codexplusplus update-codex` | Prepare Codex for its official updater, then re-patch after restart. |
+| `codexplusplus doctor` | Diagnose signatures, integrity, permissions, and common failures. |
+| `codexplusplus safe-mode` | Disable all tweaks without deleting them. |
+| `codexplusplus safe-mode --off` | Leave safe mode. |
+| `codexplusplus uninstall` | Remove Codex++ and restore the app when safe. |
+| `codexplusplus uninstall --purge` | Also delete tweaks, config, logs, backups, and Codex++ user data. |
+
+Tweak development commands:
+
+| Command | What it does |
+|---|---|
+| `codexplusplus create-tweak ./my-tweak` | Create a new tweak folder. |
+| `codexplusplus validate-tweak ./my-tweak` | Validate a tweak manifest and entry file. |
+| `codexplusplus dev ./my-tweak` | Link a local tweak into Codex++ for development. |
+
+Source checkout commands:
 
 ```sh
-codexplusplus uninstall
+npm run build
+npm test
+node packages/installer/dist/cli.js install
+node packages/installer/dist/cli.js debug
 ```
 
-Other commands: `status`, `doctor`, `repair`, `update-codex`, `create-tweak`,
-`validate-tweak`, `dev`, and `safe-mode`.
-Run `codexplusplus safe-mode --off` to leave safe mode and return to normal
-tweak loading.
+## Where Files Live
 
-### Updating Codex on macOS
+Codex++ keeps almost everything outside Codex.
 
-Codex++ modifies and re-signs `Codex.app`, so Sparkle cannot safely install an
-official Codex update while the app is patched. Use:
+| Item | Location |
+|---|---|
+| Loader patch | Inside Codex `app.asar` |
+| Runtime | `<user-data-dir>/runtime/` |
+| Tweaks | `<user-data-dir>/tweaks/` |
+| Tweak data | `<user-data-dir>/tweak-data/` |
+| Config | `<user-data-dir>/config.json` |
+| State | `<user-data-dir>/state.json` |
+| Logs | `<user-data-dir>/log/` |
+| Backups | `<user-data-dir>/backup/` |
 
-```sh
-codexplusplus update-codex
-```
+Default user data paths:
 
-This restores a Developer ID signed Codex.app for the official updater. After
-Codex updates and restarts, the watcher re-applies Codex++ to the new app.
+| OS | Path |
+|---|---|
+| macOS | `~/Library/Application Support/codex-plusplus/` |
+| Windows | `%APPDATA%/codex-plusplus/` |
+| Linux | `$XDG_DATA_HOME/codex-plusplus/` or `~/.local/share/codex-plusplus/` |
 
-Default tweaks currently installed on first run:
+On Windows Store installs, Codex++ also creates a writable managed app copy
+under `%LOCALAPPDATA%/codex-plusplus/store-apps/`. Use the Codex++ shortcut for
+that copy.
 
-- `co.bennett.custom-keyboard-shortcuts` from `b-nnett/codex-plusplus-keyboard-shortcuts`
-- `co.bennett.ui-improvements` from `b-nnett/codex-plusplus-bennett-ui`
+## Writing Tweaks
 
-## Writing a tweak
+A tweak is a folder with a manifest and an entry file:
 
-A tweak is a folder under `<user-data-dir>/tweaks/` with:
-
-```
+```text
 my-tweak/
-├── manifest.json
-└── index.js            # or .mjs / .ts (transpiled by runtime)
+  manifest.json
+  index.js
 ```
+
+Minimal `manifest.json`:
 
 ```json
 {
@@ -126,69 +196,164 @@ my-tweak/
   "name": "My Tweak",
   "version": "0.1.0",
   "githubRepo": "you/my-tweak",
-  "author": "you",
-  "description": "Adds a button.",
-  "minRuntime": "0.1.0"
+  "description": "Adds a Codex++ settings page.",
+  "scope": "renderer",
+  "main": "index.js"
 }
 ```
 
-```ts
-import type { Tweak } from "@codex-plusplus/sdk";
+Minimal `index.js`:
 
-export default {
+```js
+module.exports = {
   start(api) {
-    api.settings.register({
-      id: "my-tweak",
-      title: "My Tweak",
-      render: (root) => {
-        root.innerHTML = `<button>hi</button>`;
+    api.settings.registerPage({
+      id: "main",
+      title: api.manifest.name,
+      render(root) {
+        root.textContent = "Hello from Codex++.";
       },
     });
-    api.log.info("started");
   },
   stop() {},
-} satisfies Tweak;
+};
 ```
 
-See [`docs/WRITING-TWEAKS.md`](./docs/WRITING-TWEAKS.md) for the full API.
+Local dev loop:
 
-## Tweak updates
+```sh
+codexplusplus create-tweak ./my-tweak --id com.you.my-tweak --name "My Tweak"
+codexplusplus validate-tweak ./my-tweak
+codexplusplus dev ./my-tweak
+```
 
-Every tweak manifest must include `githubRepo` in `owner/repo` form. Codex++ checks GitHub Releases for each installed tweak at most once per day and shows **Update Available** in Settings → Tweaks when a newer semver release exists.
+Full docs are in [Writing Tweaks](./docs/WRITING-TWEAKS.md).
 
-Codex++ does **not** auto-update tweaks. The manager links to the GitHub release so users can review the diff, release notes, and repository before manually replacing local tweak files.
+## Owl And Native Bridge
 
-See [`SECURITY.md`](./SECURITY.md) for the security model and reporting policy.
+Current macOS Codex builds use Owl: a native app shell with Chromium and an
+Electron-compatible JavaScript runtime.
 
-## How it works (TL;DR)
+Codex++ 1.0.0 detects Owl and reports capability status through:
 
-| Thing | Location |
-|---|---|
-| Loader stub | `Codex.app/Contents/Resources/app.asar` (entry replaced with `loader.cjs`) |
-| Runtime | `<user-data-dir>/runtime/` (auto-installed, hot-reloadable) |
-| Tweaks | `<user-data-dir>/tweaks/` |
-| Config | `<user-data-dir>/config.json` |
-| Backup | `<user-data-dir>/backup/` |
+```sh
+codexplusplus debug
+```
 
-`<user-data-dir>` per-OS:
+Tweak authors should use the Codex++ SDK, not raw Owl internals:
 
-- macOS: `~/Library/Application Support/codex-plusplus/`
-- Linux: `$XDG_DATA_HOME/codex-plusplus/` (default `~/.local/share/codex-plusplus/`)
-- Windows: `%APPDATA%/codex-plusplus/`
+- `api.codex.runtime.getInfo()`
+- `api.codex.runtime.getCapabilities()`
+- `api.codex.windows.*`
+- `api.codex.cdp.*`
+- `api.codex.native.*`
 
-Windows also keeps the managed patched Codex app mirror in
-`%LOCALAPPDATA%/codex-plusplus/store-apps/`.
+Native bridge support includes:
 
-See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for details.
+- Tweak-owned `.node` modules.
+- Objective-C++/N-API shims for Swift, AppKit, Metal, and MetalKit.
+- Native child panels.
+- Metal-backed child-window overlays.
+- Helper processes.
+
+Start with [Native Bridge](./docs/tweaks/native-bridge.md).
+
+## Browser Host Mode
+
+Browser host mode opens the Codex React UI in a normal browser tab while a
+hidden Codex window provides the private app bridge:
+
+```sh
+codexplusplus browser --port 8765
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/
+```
+
+This is useful for debugging and browser automation. It is experimental. The
+in-app browser uses iframe shims in this mode, so some websites may block
+embedding.
+
+## Updates And Recovery
+
+Update Codex++:
+
+```sh
+codexplusplus update
+```
+
+Run the official Codex updater on macOS:
+
+```sh
+codexplusplus update-codex
+```
+
+Repair Codex++:
+
+```sh
+codexplusplus repair --force
+```
+
+Disable tweaks temporarily:
+
+```sh
+codexplusplus safe-mode
+```
+
+Re-enable normal tweak loading:
+
+```sh
+codexplusplus safe-mode --off
+```
+
+Uninstall:
+
+```sh
+codexplusplus uninstall
+```
+
+Clean uninstall, including tweaks/config/logs/backups:
+
+```sh
+codexplusplus uninstall --purge
+```
+
+## Security
+
+Codex++ runs local code inside your Codex desktop app. Install tweaks only from
+sources you trust.
+
+Important details:
+
+- Codex++ does not silently update tweak files.
+- Tweak update checks link to GitHub Releases for review.
+- Native tweaks can run native code and need extra review.
+- Native bridge paths are restricted to files inside the tweak directory.
+- Tweak data APIs default to Codex++'s user data directory.
+
+See [Security](./SECURITY.md).
+
+## More Docs
+
+- [Architecture](./docs/ARCHITECTURE.md)
+- [Troubleshooting](./docs/TROUBLESHOOTING.md)
+- [Writing Tweaks](./docs/WRITING-TWEAKS.md)
+- [Tweak API Reference](./docs/tweaks/api-reference.md)
+- [Manifest Reference](./docs/tweaks/manifest.md)
+- [Runtime And Lifecycle](./docs/tweaks/runtime-lifecycle.md)
+- [UI And DOM Patterns](./docs/tweaks/ui-and-dom.md)
+- [MCP Servers](./docs/tweaks/mcp.md)
+- [Owl Runtime Surface](./docs/OWL-RUNTIME.md)
+- [Owl Bridge Roadmap](./docs/OWL-BRIDGE-ROADMAP.md)
 
 ## Contributors
 
-- [Alex Naidis (@TheCrazyLex)](https://github.com/TheCrazyLex) — macOS permission hardening and sudo install handling.
+- [Alex Naidis (@TheCrazyLex)](https://github.com/TheCrazyLex) - macOS
+  permission hardening and sudo install handling.
 
-## Legal
-
-This is an unofficial project. Not affiliated with OpenAI. Modifying Codex.app violates its code signature; on macOS you may need to allow the re-signed app on first launch. Auto-updates from Sparkle overwrite the patch, so `codex-plusplus` installs a watcher that re-applies it.
-
-Use at your own risk.
+## License
 
 MIT.

@@ -24,7 +24,8 @@ my-tweak/
   icon.png        ← optional, referenced by manifest.iconUrl
 ```
 
-`index.js` may be ESM or CJS. It is loaded as a CommonJS-shaped module:
+`index.js` is loaded as a CommonJS-shaped module. Bundle ESM or TypeScript to
+runtime-loadable JavaScript before installing the tweak:
 
 ```js
 module.exports = {
@@ -55,7 +56,7 @@ module.exports = defineTweak({
 | `homepage`    | `string` (URL)                  | no       | Linked next to the author. |
 | `iconUrl`     | `string`                        | no       | `https://…`, `data:…`, or `./relative.png`. If absent, an initial avatar is rendered. |
 | `tags`        | `string[]`                      | no       | e.g. `["ui", "shortcut"]`. |
-| `scope`       | `"renderer" \| "main" \| "both"` | no      | Default `"renderer"`. |
+| `scope`       | `"renderer" \| "main" \| "both"` | no      | Current runtime behavior is effectively `"both"` when omitted. Set it explicitly. |
 | `main`        | `string`                        | no       | Custom entry path. Defaults to `index.js`/`index.mjs`/`index.cjs`. |
 | `minRuntime`  | `string` (semver range)         | no       | Codex++ runtime range required. |
 
@@ -86,10 +87,17 @@ See `@codex-plusplus/sdk` for full types. The most-used pieces:
 - `api.storage.{get,set,delete,all}` — per-tweak persistent KV.
 - `api.settings.register({ id, title, description, render })` — register a
   section that appears under your tweak's row in the Tweaks page.
+- `api.settings.registerPage({ id, title, description?, iconSvg?, render })` — register a dedicated settings page in the sidebar.
 - `api.react.waitForElement(selector, timeoutMs?)` — async DOM-ready wait.
 - `api.react.findOwnerByName(node, "Component")` — fiber walk.
 - `api.ipc.{on,send,invoke}` — channels are auto-prefixed with `codexpp:<id>:`.
 - `api.fs.{read,write,exists}` — sandboxed to your tweak's data dir.
+- `api.codex.runtime.{getInfo,getCapabilities}` — Owl/Electron runtime probes.
+- `api.codex.windows.{create,getPrimary,focus,show}` — stable native Codex window hooks.
+- `api.codex.views.create(...)` — Owl `WebContentsView`/`BrowserView` overlays inside Codex windows.
+- `api.codex.cdp.{getStatus,listTargets}` — CDP status/target discovery when remote debug is enabled.
+- `api.codex.native.{loadModule,createPanel,attachView,launchHelper}` — native module, AppKit/Metal view, and helper bridge.
+- `api.codex.{createWindow,createBrowserView}` — backwards-compatible window/view hooks.
 
 ## UI components — copy these, don't invent new ones
 

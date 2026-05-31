@@ -7,6 +7,8 @@ import { repair } from "./commands/repair.js";
 import { updateCodex } from "./commands/update-codex.js";
 import { selfUpdate } from "./commands/self-update.js";
 import { status } from "./commands/status.js";
+import { debug } from "./commands/debug.js";
+import { browserUi } from "./commands/browser-ui.js";
 import { doctor } from "./commands/doctor.js";
 import { safeMode } from "./commands/safe-mode.js";
 import { CODEX_PLUSPLUS_VERSION } from "./version.js";
@@ -21,8 +23,7 @@ interface InstallCliOpts {
   localSigning?: boolean;
   "local-signing"?: boolean;
   watcher?: boolean;
-  defaultTweaks?: boolean;
-  "default-tweaks"?: boolean;
+  verbose?: boolean;
 }
 
 interface RepairCliOpts {
@@ -59,7 +60,6 @@ function runInstall(opts: InstallCliOpts): Promise<void> {
   return install({
     ...opts,
     localSigning: resolveLocalSigning(opts),
-    defaultTweaks: opts.defaultTweaks ?? opts["default-tweaks"],
   });
 }
 
@@ -117,13 +117,14 @@ prog
   .option("--local", "Use a stable local signing identity on macOS")
   .option("--local-signing", "Alias for --local")
   .option("--watcher", "Install the auto-repair watcher", true)
-  .option("--default-tweaks", "Install the default tweak set from latest GitHub releases", true)
+  .option("--verbose", "Show low-level patching details")
   .action(wrap(runInstall));
 
 prog
   .command("uninstall")
   .describe("Restore Codex.app from backup and remove the watcher")
   .option("--app", "Path to Codex.app / install dir")
+  .option("--purge", "Delete tweaks, config, logs, backups, and Codex++ user data")
   .action(wrap(uninstall));
 
 prog
@@ -169,6 +170,21 @@ prog
   .command("status")
   .describe("Show patch status, paths, version")
   .action(status);
+
+prog
+  .command("debug")
+  .describe("Show Codex install, runtime, data paths, and open state")
+  .option("--app", "Path to Codex.app / install dir")
+  .action(wrap(debug));
+
+prog
+  .command("browser")
+  .describe("Open the Codex React UI in a browser tab backed by a hidden Codex host")
+  .option("--app", "Path to Codex.app / install dir")
+  .option("--port", "Local browser UI port", 8765)
+  .option("--open", "Open the browser tab after launch", true)
+  .option("--keep-window", "Leave the Codex desktop window visible")
+  .action(wrap(browserUi));
 
 prog
   .command("doctor")
