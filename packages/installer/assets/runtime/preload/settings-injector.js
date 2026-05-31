@@ -1639,7 +1639,7 @@ function sidebarReleasesPillButton() {
         textTransform: "none",
         boxShadow: "0 1px 2px rgba(0, 0, 0, 0.18)",
     });
-    btn.textContent = "Update";
+    btn.textContent = "Releases";
     btn.title = "Open Codex++ releases";
     btn.addEventListener("mouseenter", () => {
         btn.style.background = "#0071E3";
