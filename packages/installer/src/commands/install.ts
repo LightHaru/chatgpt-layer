@@ -24,7 +24,7 @@ import {
 } from "../codex-window-services.js";
 import { chownForTargetUser } from "../ownership.js";
 import { getOpenReport, type OpenReport } from "./debug.js";
-import { openCodex, promptRestartCodexToRepatch } from "../alerts.js";
+import { openCodex, quitCodex } from "../alerts.js";
 
 interface Opts {
   app?: string;
@@ -54,7 +54,7 @@ export async function install(opts: Opts = {}): Promise<void> {
     step("Skipping Electron fuse flip; Electron Framework binary was not found");
   }
   preflightSystemTools(codex.platform, resign, codex.metaPath !== null);
-  const reopenAfterPatch = preflightAppClosed(codex);
+  const reopenAfterPatch = preflightAppClosed(codex, step);
 
   // Pre-flight every app-bundle target we will mutate so permission failures
   // surface before we patch app.asar or touch backups.
@@ -584,7 +584,8 @@ export function assertCodexNotRunning(
 
 export interface PrepareCodexForPatchingController {
   getOpenReport?: (codex: CodexInstall) => OpenReport;
-  promptRestart?: (appRoot: string) => boolean;
+  quitCodex?: (appRoot: string) => void;
+  step?: (msg: string) => void;
 }
 
 export function prepareCodexForPatching(
@@ -595,8 +596,10 @@ export function prepareCodexForPatching(
   const open = readOpenReport(codex);
   if (open.status === "closed") return false;
 
-  const askRestart = controller.promptRestart ?? promptRestartCodexToRepatch;
-  if (codex.platform === "darwin" && askRestart(codex.appRoot)) {
+  const quit = controller.quitCodex ?? quitCodex;
+  if (codex.platform === "darwin") {
+    controller.step?.("Codex is running; quitting it before patching");
+    quit(codex.appRoot);
     assertCodexNotRunning(codex, readOpenReport(codex));
     return true;
   }
@@ -634,8 +637,8 @@ function formatRelatedPids(pids: number[]): string {
   return `\n  Related PIDs: ${shown}${more}`;
 }
 
-function preflightAppClosed(codex: CodexInstall): boolean {
-  return prepareCodexForPatching(codex);
+function preflightAppClosed(codex: CodexInstall, step: (msg: string) => void): boolean {
+  return prepareCodexForPatching(codex, { step });
 }
 
 function escapePowerShellSingleQuotedString(value: string): string {

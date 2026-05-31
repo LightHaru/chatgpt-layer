@@ -214,9 +214,8 @@ test("install preflight restarts a running macOS Codex before patching", () => {
 
   const shouldReopen = prepareCodexForPatching(fakeCodex(), {
     getOpenReport: () => reports[Math.min(reportIndex++, reports.length - 1)]!,
-    promptRestart: () => {
+    quitCodex: () => {
       prompted = true;
-      return true;
     },
   });
 
@@ -236,7 +235,7 @@ test("install preflight fails if Codex does not quit for restart patching", () =
           openedAtRaw: null,
           detail: "Main Codex process is running but not frontmost.",
         }),
-        promptRestart: () => true,
+        quitCodex: () => {},
       });
     },
     /Close Codex before patching/,

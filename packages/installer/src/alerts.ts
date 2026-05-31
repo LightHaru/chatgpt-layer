@@ -230,7 +230,7 @@ function quitAndRestartCodex(appRoot: string): void {
   openCodex(appRoot);
 }
 
-function quitCodex(appRoot: string): void {
+export function quitCodex(appRoot: string): void {
   try {
     execFileSync("osascript", ["-e", `tell application id ${appleScriptString(codexBundleId(appRoot))} to quit`], {
       stdio: "ignore",
