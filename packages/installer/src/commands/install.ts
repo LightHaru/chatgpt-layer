@@ -201,7 +201,9 @@ export async function install(opts: Opts = {}): Promise<void> {
 
   if (!opts.quiet) {
     console.log();
-    console.log(`${kleur.green().bold("✓ codex-plusplus installed.")} Tweaks: ${kleur.cyan(paths.tweaks)} Logs: ${kleur.cyan(paths.logDir)}`);
+    console.log(kleur.green().bold("✓ codex-plusplus installed."));
+    console.log(`  Tweaks: ${kleur.cyan(paths.tweaks)}`);
+    console.log(`  Logs:   ${kleur.cyan(paths.logDir)}`);
     if (launcher) {
       console.log(`  Launch ${kleur.cyan("Codex++")} from Start Menu or Desktop.`);
       console.log(`  Opening the Microsoft Store ${kleur.cyan("Codex")} app directly will launch the unpatched app.`);
