@@ -63,7 +63,6 @@ That's it. The installer:
 5. Flips `EnableEmbeddedAsarIntegrityValidation` in the Electron Framework binary as a belt-and-suspenders.
 6. Re-signs the app on macOS with a stable per-machine "Codex++ Local Signing" identity, creating it in the user keychain if needed.
 7. Installs a launch agent / login item that detects app updates and re-runs `repair --quiet`.
-8. Installs the default tweak set from their latest GitHub releases unless `--no-default-tweaks` is passed.
 
 The watcher also runs hourly through the GitHub-installed local CLI. If a newer Codex++ GitHub release is available, it downloads the release, rebuilds the local CLI/runtime, and runs `repair` so the runtime in your user directory is refreshed without replacing tweak code. You can turn this off from Settings → Codex Plus Plus → Config.
 
@@ -104,11 +103,6 @@ codexplusplus update-codex
 
 This restores a Developer ID signed Codex.app for the official updater. After
 Codex updates and restarts, the watcher re-applies Codex++ to the new app.
-
-Default tweaks currently installed on first run:
-
-- `co.bennett.custom-keyboard-shortcuts` from `b-nnett/codex-plusplus-keyboard-shortcuts`
-- `co.bennett.ui-improvements` from `b-nnett/codex-plusplus-bennett-ui`
 
 ## Writing a tweak
 

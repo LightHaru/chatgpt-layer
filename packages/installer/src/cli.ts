@@ -22,8 +22,6 @@ interface InstallCliOpts {
   localSigning?: boolean;
   "local-signing"?: boolean;
   watcher?: boolean;
-  defaultTweaks?: boolean;
-  "default-tweaks"?: boolean;
 }
 
 interface RepairCliOpts {
@@ -60,7 +58,6 @@ function runInstall(opts: InstallCliOpts): Promise<void> {
   return install({
     ...opts,
     localSigning: resolveLocalSigning(opts),
-    defaultTweaks: opts.defaultTweaks ?? opts["default-tweaks"],
   });
 }
 
@@ -118,7 +115,6 @@ prog
   .option("--local", "Use a stable local signing identity on macOS")
   .option("--local-signing", "Alias for --local")
   .option("--watcher", "Install the auto-repair watcher", true)
-  .option("--default-tweaks", "Install the default tweak set from latest GitHub releases", true)
   .action(wrap(runInstall));
 
 prog

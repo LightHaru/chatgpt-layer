@@ -2,7 +2,7 @@ import kleur from "kleur";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync, readdirSync, rmSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { locateCodex, type CodexInstall } from "../platform.js";
 import { ensureUserPaths } from "../paths.js";
@@ -14,7 +14,6 @@ import { readPlist } from "../plist.js";
 import { writeState } from "../state.js";
 import { installWatcher, type WatcherKind } from "../watcher.js";
 import { CODEX_PLUSPLUS_VERSION } from "../version.js";
-import { installDefaultTweaks } from "../default-tweaks.js";
 import { formatCliShimResult, installCliShims } from "../cli-shim.js";
 import { findSourceRoot } from "../source-root.js";
 import {
@@ -33,7 +32,6 @@ interface Opts {
   watcher?: boolean;
   watcherKind?: WatcherKind;
   quiet?: boolean;
-  defaultTweaks?: boolean;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +43,6 @@ export async function install(opts: Opts = {}): Promise<void> {
   const resign = opts.resign !== false;
   let localSigning = opts.localSigning === true;
   const wantWatcher = opts.watcher !== false;
-  const wantDefaultTweaks = opts.defaultTweaks !== false;
 
   const step = makeStepper(opts.quiet === true);
   const codex = locateCodex(opts.app);
@@ -175,12 +172,7 @@ export async function install(opts: Opts = {}): Promise<void> {
     }
   }
 
-  // 8. Seed default tweaks from their release channels.
-  if (wantDefaultTweaks) {
-    await installDefaultTweaks(paths.tweaks, step);
-  }
-
-  // 9. Persist state.
+  // 8. Persist state.
   writeState(paths.stateFile, {
     version: CODEX_PLUSPLUS_VERSION,
     installedAt: new Date().toISOString(),
@@ -367,15 +359,35 @@ function patchCodexWindowServices(
 }
 
 export function findCodexMainCandidates(appDir: string, originalMain: string): string[] {
-  const out = [resolve(appDir, originalMain)];
+  const originalPath = resolve(appDir, originalMain);
+  const out = existsSync(originalPath) ? [originalPath] : [];
   const buildDir = resolve(appDir, ".vite", "build");
-  try {
-    const viteFiles = readdirSync(buildDir)
-      .filter((name) => name.endsWith(".js"))
-      .sort((a, b) => candidateRank(a) - candidateRank(b) || a.localeCompare(b));
-    for (const name of viteFiles) out.push(resolve(buildDir, name));
-  } catch {}
-  return [...new Set(out)].filter((p) => existsSync(p));
+  const roots: Array<{ dir: string; recursive: boolean }> = [
+    { dir: appDir, recursive: false },
+    { dir: buildDir, recursive: true },
+  ];
+  const originalDir = dirname(originalPath);
+  if (originalDir !== appDir && !isSameOrInside(originalDir, buildDir)) {
+    roots.push({ dir: originalDir, recursive: true });
+  }
+
+  const discovered = roots
+    .flatMap((root) => collectJavaScriptFiles(root.dir, root.recursive))
+    .sort((a, b) => {
+      const rank = candidateRank(basename(a)) - candidateRank(basename(b));
+      if (rank !== 0) return rank;
+      const name = basename(a).localeCompare(basename(b));
+      if (name !== 0) return name;
+      return relative(appDir, a).localeCompare(relative(appDir, b));
+    });
+
+  const seen = new Set(out);
+  for (const candidate of discovered) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    out.push(candidate);
+  }
+  return out;
 }
 
 function candidateRank(name: string): number {
@@ -384,6 +396,27 @@ function candidateRank(name: string): number {
   if (/^(app|desktop|src)(?:[-.].*)?\.js$/.test(name)) return 2;
   if (/preload|worker|service/i.test(name)) return 4;
   return 3;
+}
+
+function collectJavaScriptFiles(dir: string, recursive: boolean): string[] {
+  const out: string[] = [];
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules") continue;
+      const target = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (recursive) out.push(...collectJavaScriptFiles(target, true));
+      } else if (entry.isFile() && entry.name.endsWith(".js")) {
+        out.push(target);
+      }
+    }
+  } catch {}
+  return out;
+}
+
+function isSameOrInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel === "" || (rel !== "" && !rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function formatWindowServicesHookFailure(

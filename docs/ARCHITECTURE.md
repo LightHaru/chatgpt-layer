@@ -40,10 +40,6 @@ Tweak updates are deliberately advisory. `manifest.json` must include `githubRep
 
 The renderer only receives cached metadata (`latestVersion`, `releaseUrl`, `updateAvailable`) and can open the GitHub release for review. There is no automatic download, install, or replacement path in the runtime.
 
-## Default tweaks
-
-The installer seeds the default tweak set from external GitHub release tarballs instead of carrying their source in this repository. Existing local tweak folders are never overwritten. Pass `--no-default-tweaks` for a clean install with only the Codex++ runtime.
-
 ## Boot sequence
 
 1. User launches Codex.app.
