@@ -154,7 +154,7 @@ export async function repair(opts: Opts = {}): Promise<void> {
     quiet: opts.quiet,
   });
   if (reopenAfterRepair && repairedAppRoot) {
-    openCodex(repairedAppRoot);
+    openCodex(repairedAppRoot, { detached: true, delayMs: 1_000 });
   } else if (codexWasRunning && repairedAppRoot) {
     promptRestartCodexAfterPatch(repairedAppRoot);
   }

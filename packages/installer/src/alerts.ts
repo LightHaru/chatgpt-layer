@@ -1,9 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { platform } from "node:os";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { readPlist } from "./plist.js";
 import { CODEX_PLUSPLUS_VERSION } from "./version.js";
+import { locateCodex } from "./platform.js";
+import { getOpenReport, type OpenReport } from "./commands/debug.js";
 
 const CODEX_BUNDLE_ID = "com.openai.codex";
 const CODEX_PLUSPLUS_REPO_URL = "https://github.com/b-nnett/codex-plusplus";
@@ -124,9 +126,18 @@ export function promptRestartCodexToRepatch(appRoot: string): boolean {
   return true;
 }
 
-export function openCodex(appRoot: string): void {
+interface OpenCodexOptions {
+  detached?: boolean;
+  delayMs?: number;
+}
+
+export function openCodex(appRoot: string, opts: OpenCodexOptions = {}): void {
   if (platform() !== "darwin") return;
   const bundleId = codexBundleId(appRoot);
+  if (opts.detached) {
+    spawnDetachedReopen(appRoot, bundleId, opts.delayMs ?? 750);
+    return;
+  }
   try {
     execFileSync("open", ["-b", bundleId], { stdio: "ignore" });
   } catch {
@@ -143,11 +154,36 @@ export function openCodex(appRoot: string): void {
 
 export function isCodexRunning(appRoot: string): boolean {
   try {
-    execFileSync("pgrep", ["-f", `${appRoot}/Contents`], { stdio: "ignore" });
-    return true;
+    return isCodexMainProcessRunning(appRoot);
   } catch {
     return false;
   }
+}
+
+function spawnDetachedReopen(appRoot: string, bundleId: string, delayMs: number): void {
+  const child = spawn("osascript", ["-e", codexReopenScript(appRoot, bundleId, delayMs)], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+}
+
+export function codexReopenScript(appRoot: string, bundleId: string, delayMs: number): string {
+  const delaySeconds = Math.max(0, delayMs) / 1000;
+  const openByBundle = `/usr/bin/open -b ${shellQuote(bundleId)}`;
+  const openByPath = `/usr/bin/open ${shellQuote(appRoot)}`;
+  return [
+    `delay ${delaySeconds.toFixed(2)}`,
+    "try",
+    `do shell script ${appleScriptString(openByBundle)}`,
+    "on error",
+    `do shell script ${appleScriptString(openByPath)}`,
+    "end try",
+    "delay 0.50",
+    "try",
+    `tell application id ${appleScriptString(bundleId)} to activate`,
+    "end try",
+  ].join("\n");
 }
 
 interface AlertOptions {
@@ -227,7 +263,7 @@ function codexIconPath(appRoot: string): string {
 
 function quitAndRestartCodex(appRoot: string): void {
   quitCodex(appRoot);
-  openCodex(appRoot);
+  openCodex(appRoot, { detached: true, delayMs: 750 });
 }
 
 export function quitCodex(appRoot: string): void {
@@ -238,12 +274,46 @@ export function quitCodex(appRoot: string): void {
   } catch {}
 
   const started = Date.now();
-  while (Date.now() - started < 10_000 && isCodexRunning(appRoot)) {
+  while (Date.now() - started < 8_000 && isCodexMainProcessRunning(appRoot)) {
     try {
       execFileSync("sleep", ["0.5"], { stdio: "ignore" });
     } catch {
       break;
     }
+  }
+
+  if (isCodexMainProcessRunning(appRoot)) {
+    terminateCodexMainProcess(appRoot);
+    const terminatedAt = Date.now();
+    while (Date.now() - terminatedAt < 3_000 && isCodexMainProcessRunning(appRoot)) {
+      try {
+        execFileSync("sleep", ["0.25"], { stdio: "ignore" });
+      } catch {
+        break;
+      }
+    }
+  }
+}
+
+function isCodexMainProcessRunning(appRoot: string): boolean {
+  const report = codexOpenReport(appRoot);
+  if (!report || report.status === "closed") return false;
+  return report.hasMainProcess !== false;
+}
+
+function terminateCodexMainProcess(appRoot: string): void {
+  const report = codexOpenReport(appRoot);
+  if (!report?.pid || report.hasMainProcess === false) return;
+  try {
+    process.kill(report.pid, "SIGTERM");
+  } catch {}
+}
+
+function codexOpenReport(appRoot: string): OpenReport | null {
+  try {
+    return getOpenReport(locateCodex(appRoot));
+  } catch {
+    return null;
   }
 }
 
@@ -339,4 +409,8 @@ function codexBundleId(appRoot: string): string {
 
 function appleScriptString(value: string): string {
   return JSON.stringify(value);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }

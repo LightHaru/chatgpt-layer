@@ -11,7 +11,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildCliFailureIssueUrl, buildPatchFailureIssueUrl, isMacAppManagementError } from "../src/alerts";
+import {
+  buildCliFailureIssueUrl,
+  buildPatchFailureIssueUrl,
+  codexReopenScript,
+  isMacAppManagementError,
+} from "../src/alerts";
 import { findCodexMainCandidates } from "../src/commands/install";
 import { createTweak } from "../src/commands/create-tweak";
 import { devTweak } from "../src/commands/dev-tweak";
@@ -359,6 +364,15 @@ test("CLI failure report URL includes command and environment details", () => {
   assert.match(url.searchParams.get("body") ?? "", /codesign not installed/);
   assert.match(url.searchParams.get("body") ?? "", /Codex\+\+:/);
   assert.match(url.searchParams.get("body") ?? "", /Node:/);
+});
+
+test("Codex reopen script launches by bundle id from a detached helper", () => {
+  const script = codexReopenScript("/Applications/Codex.app", "com.openai.codex", 1000);
+
+  assert.match(script, /delay 1\.00/);
+  assert.match(script, /\/usr\/bin\/open -b 'com\.openai\.codex'/);
+  assert.match(script, /\/usr\/bin\/open '\/Applications\/Codex\.app'/);
+  assert.match(script, /tell application id "com\.openai\.codex" to activate/);
 });
 
 test("App Management failures use the dedicated repair alert path", () => {

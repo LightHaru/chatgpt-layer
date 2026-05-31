@@ -211,6 +211,13 @@ function readSelfUpdateState(): SelfUpdateState | null {
     return null;
   }
 }
+function writeSelfUpdateState(state: SelfUpdateState): void {
+  try {
+    writeFileSync(SELF_UPDATE_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (e) {
+    log("warn", "writeSelfUpdateState failed:", String((e as Error).message));
+  }
+}
 
 function cleanOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -569,12 +576,16 @@ ipcMain.handle("codexpp:check-codexpp-update", async (_e, force?: boolean) => {
 
 ipcMain.handle("codexpp:run-codexpp-update", async () => {
   const sourceRoot = readInstallerState()?.sourceRoot ?? fallbackSourceRoot();
-  const cli = sourceRoot ? join(sourceRoot, "packages", "installer", "dist", "cli.js") : null;
-  if (!cli || !existsSync(cli)) {
+  if (!sourceRoot) {
     throw new Error("Codex++ source CLI was not found. Run the installer once, then try again.");
   }
-  await runInstalledCli(cli, ["update", "--watcher"]);
-  return readSelfUpdateState();
+  const cli = join(sourceRoot, "packages", "installer", "dist", "cli.js");
+  if (!existsSync(cli)) {
+    throw new Error("Codex++ source CLI was not found. Run the installer once, then try again.");
+  }
+  const pending = markSelfUpdateStarted(sourceRoot);
+  startInstalledCli(cli, ["update", "--watcher"]);
+  return pending;
 });
 
 ipcMain.handle("codexpp:get-watcher-health", () => getWatcherHealth(userRoot!));
@@ -1386,30 +1397,33 @@ function describeInstallationSource(sourceRoot: string | null): InstallationSour
   return { kind: "unknown", label: "Unknown", detail: sourceRoot };
 }
 
-function runInstalledCli(cli: string, args: string[]): Promise<void> {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(process.execPath, [cli, ...args], {
-      cwd: resolve(dirname(cli), "..", "..", ".."),
-      env: { ...process.env, CODEX_PLUSPLUS_MANUAL_UPDATE: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let output = "";
-    child.stdout?.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    child.on("error", rejectRun);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolveRun();
-        return;
-      }
-      const tail = output.trim().split(/\r?\n/).slice(-12).join("\n");
-      rejectRun(new Error(tail || `codexplusplus ${args.join(" ")} failed with exit code ${code}`));
-    });
+function startInstalledCli(cli: string, args: string[]): void {
+  const child = spawn(process.execPath, [cli, ...args], {
+    cwd: resolve(dirname(cli), "..", "..", ".."),
+    env: { ...process.env, CODEX_PLUSPLUS_MANUAL_UPDATE: "1" },
+    detached: true,
+    stdio: "ignore",
   });
+  child.unref();
+}
+
+function markSelfUpdateStarted(sourceRoot: string): SelfUpdateState {
+  const config = readState().codexPlusPlus;
+  const channel = config?.updateChannel ?? "stable";
+  const state: SelfUpdateState = {
+    checkedAt: new Date().toISOString(),
+    status: "checking",
+    currentVersion: CODEX_PLUSPLUS_VERSION,
+    latestVersion: null,
+    targetRef: config?.updateChannel === "custom" ? config.updateRef ?? null : null,
+    releaseUrl: null,
+    repo: config?.updateRepo ?? CODEX_PLUSPLUS_REPO,
+    channel,
+    sourceRoot,
+    installationSource: describeInstallationSource(sourceRoot),
+  };
+  writeSelfUpdateState(state);
+  return state;
 }
 
 function broadcastReload(): void {

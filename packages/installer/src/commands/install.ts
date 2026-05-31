@@ -195,7 +195,7 @@ export async function install(opts: Opts = {}): Promise<void> {
   });
   chownForTargetUser(paths.root, { recursive: true });
   if (reopenAfterPatch) {
-    openCodex(codex.appRoot);
+    openCodex(codex.appRoot, { detached: true, delayMs: 1_000 });
     step("Reopened Codex");
   }
 

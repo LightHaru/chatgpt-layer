@@ -36,6 +36,7 @@ export interface OpenReport {
   status: OpenStatus;
   pid: number | null;
   relatedPids: number[];
+  hasMainProcess?: boolean;
   openedAt: string | null;
   openedAtRaw: string | null;
   detail: string | null;
@@ -169,6 +170,7 @@ export function getOpenReport(codex: CodexInstall): OpenReport {
       status: "closed",
       pid: null,
       relatedPids: [],
+      hasMainProcess: false,
       openedAt: null,
       openedAtRaw: null,
       detail: "No Codex processes found for the detected install path.",
@@ -180,6 +182,7 @@ export function getOpenReport(codex: CodexInstall): OpenReport {
       status: "background",
       pid: primary.pid,
       relatedPids: related.map((p) => p.pid),
+      hasMainProcess: false,
       openedAt: primary.startedAt,
       openedAtRaw: primary.startedAtRaw,
       detail: "Only helper/background processes were found.",
@@ -208,6 +211,7 @@ function openReport(status: OpenStatus, primary: ProcessInfo, related: ProcessIn
     status,
     pid: primary.pid,
     relatedPids: related.map((p) => p.pid),
+    hasMainProcess: true,
     openedAt: primary.startedAt,
     openedAtRaw: primary.startedAtRaw,
     detail,
