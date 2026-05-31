@@ -578,6 +578,7 @@ export function assertCodexNotRunning(
   open: OpenReport = getOpenReport(codex),
 ): void {
   if (open.status === "closed") return;
+  if (open.hasMainProcess === false) return;
 
   throw new Error(formatCodexRunningError(codex, open));
 }
@@ -595,6 +596,7 @@ export function prepareCodexForPatching(
   const readOpenReport = controller.getOpenReport ?? getOpenReport;
   const open = readOpenReport(codex);
   if (open.status === "closed") return false;
+  if (open.hasMainProcess === false) return false;
 
   const quit = controller.quitCodex ?? quitCodex;
   if (codex.platform === "darwin") {

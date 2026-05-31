@@ -1398,6 +1398,9 @@ function describeInstallationSource(sourceRoot: string | null): InstallationSour
 }
 
 function startInstalledCli(cli: string, args: string[]): void {
+  if (process.platform === "darwin" && startInstalledCliWithLaunchd(cli, args)) {
+    return;
+  }
   const child = spawn(process.execPath, [cli, ...args], {
     cwd: resolve(dirname(cli), "..", "..", ".."),
     env: { ...process.env, CODEX_PLUSPLUS_MANUAL_UPDATE: "1" },
@@ -1405,6 +1408,37 @@ function startInstalledCli(cli: string, args: string[]): void {
     stdio: "ignore",
   });
   child.unref();
+}
+
+function startInstalledCliWithLaunchd(cli: string, args: string[]): boolean {
+  const label = `com.codexplusplus.patch-helper.${process.pid}.${Date.now()}`;
+  const command = [
+    `cd ${shellQuote(resolve(dirname(cli), "..", "..", ".."))}`,
+    `CODEX_PLUSPLUS_MANUAL_UPDATE=1 ${[process.execPath, cli, ...args].map(shellQuote).join(" ")}`,
+  ].join(" && ");
+  const result = spawnSync(
+    "launchctl",
+    [
+      "submit",
+      "-l",
+      label,
+      "--",
+      "/bin/sh",
+      "-c",
+      `${command} || true`,
+    ],
+    {
+      encoding: "utf8",
+      stdio: "ignore",
+    },
+  );
+  if (result.status === 0) return true;
+  log("warn", `launchctl submit failed for Codex++ patch helper: ${result.error?.message ?? result.status}`);
+  return false;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function markSelfUpdateStarted(sourceRoot: string): SelfUpdateState {

@@ -174,6 +174,29 @@ test("install preflight allows patching when Codex is closed", () => {
   });
 });
 
+test("install preflight ignores helper-only Codex processes", () => {
+  const helperOnly = {
+    status: "background",
+    pid: 123,
+    relatedPids: [123, 456],
+    hasMainProcess: false,
+    openedAt: "2026-05-23T09:17:22.000Z",
+    openedAtRaw: null,
+    detail: "Only helper/background processes were found.",
+  } satisfies OpenReport;
+
+  assert.doesNotThrow(() => {
+    assertCodexNotRunning(fakeCodex(), helperOnly);
+  });
+
+  assert.equal(
+    prepareCodexForPatching(fakeCodex(), {
+      getOpenReport: () => helperOnly,
+    }),
+    false,
+  );
+});
+
 test("install preflight blocks patching while Codex is running", () => {
   assert.throws(
     () => {
