@@ -8,7 +8,7 @@ export type Platform = "darwin" | "win32" | "linux";
 export type CodexChannel = "stable" | "beta" | "unknown";
 
 export interface CodexInstall {
-  /** Path to Codex.app (mac), Codex install dir (win), or AppImage (linux). */
+  /** Path to ChatGPT.app / Codex.app (mac), install dir (win), or AppImage (linux). */
   appRoot: string;
   /** Resources/ dir inside the app. */
   resourcesDir: string;
@@ -31,6 +31,7 @@ export interface CodexInstall {
 
 const MAC_DEFAULT = "/Applications/Codex.app";
 const MAC_BETA_DEFAULT = "/Applications/Codex (Beta).app";
+const MAC_CHATGPT_DEFAULT = "/Applications/ChatGPT.app";
 
 export function detectPlatform(): Platform {
   const p = platform();
@@ -48,8 +49,10 @@ export function locateCodex(override?: string): CodexInstall {
 function locateMac(override?: string): CodexInstall {
   const candidates = [
     override,
+    MAC_CHATGPT_DEFAULT,
     MAC_DEFAULT,
     MAC_BETA_DEFAULT,
+    join(homedir(), "Applications", "ChatGPT.app"),
     join(homedir(), "Applications", "Codex.app"),
     join(homedir(), "Applications", "Codex (Beta).app"),
     ...findMacCodexApps("/Applications"),
@@ -59,11 +62,11 @@ function locateMac(override?: string): CodexInstall {
   const appRoot = unique(candidates).find((p) => isMacCodexApp(p));
   if (!appRoot) {
     throw new Error(
-      `[!] Codex App Not Found\n\n` +
-        `Ensure Codex.app or Codex (Beta).app is installed in /Applications or ~/Applications.\n` +
+      `[!] ChatGPT / Codex App Not Found\n\n` +
+        `Ensure ChatGPT.app, Codex.app, or Codex (Beta).app is installed in /Applications or ~/Applications.\n` +
         `Tried:\n  ${unique(candidates).join("\n  ")}\n\n` +
-        `If Codex is somewhere else, rerun with:\n` +
-        `  codex-plusplus install --app /path/to/Codex.app`,
+        `If the app is somewhere else, rerun with:\n` +
+        `  chatgpt-layer install --app /path/to/ChatGPT.app`,
     );
   }
   const info = readMacAppInfo(appRoot);
@@ -94,7 +97,7 @@ function findMacCodexApps(dir: string): string[] {
   if (!existsSync(dir)) return [];
   try {
     return readdirSync(dir)
-      .filter((name) => /\.app$/i.test(name) && /\bcodex\b/i.test(name))
+      .filter((name) => /\.app$/i.test(name) && (/\bcodex\b/i.test(name) || /\bchatgpt\b/i.test(name)))
       .map((name) => join(dir, name));
   } catch {
     return [];
@@ -130,7 +133,7 @@ export function inferCodexChannel(bundleId: string | null, appName?: string): Co
   if (bundleId === "com.openai.codex") return "stable";
   if (bundleId === "com.openai.codex.beta") return "beta";
   if (/\bbeta\b/i.test(appName ?? "")) return "beta";
-  if (/\bcodex\b/i.test(appName ?? "")) return "stable";
+  if (/\bcodex\b/i.test(appName ?? "") || /\bchatgpt\b/i.test(appName ?? "")) return "stable";
   return "unknown";
 }
 
@@ -148,8 +151,12 @@ function locateWin(override?: string): CodexInstall {
       join(local, "Programs", "Codex (Beta)"),
       join(local, "Programs", "Codex Beta"),
       join(local, "Programs", "codex-beta"),
+      join(local, "Programs", "ChatGPT"),
+      join(local, "Programs", "chatgpt"),
       join(local, "Programs", "Codex"),
       join(local, "Programs", "codex"),
+      join(local, "ChatGPT"),
+      join(local, "chatgpt"),
       join(local, "Codex (Beta)"),
       join(local, "Codex Beta"),
       join(local, "codex-beta"),
@@ -160,6 +167,8 @@ function locateWin(override?: string): CodexInstall {
   }
   if (programFiles) {
     candidates.push(
+      join(programFiles, "ChatGPT"),
+      join(programFiles, "chatgpt"),
       join(programFiles, "Codex (Beta)"),
       join(programFiles, "Codex Beta"),
       join(programFiles, "codex-beta"),
@@ -171,6 +180,8 @@ function locateWin(override?: string): CodexInstall {
   }
   if (programFilesX86) {
     candidates.push(
+      join(programFilesX86, "ChatGPT"),
+      join(programFilesX86, "chatgpt"),
       join(programFilesX86, "Codex (Beta)"),
       join(programFilesX86, "Codex Beta"),
       join(programFilesX86, "codex-beta"),
@@ -195,8 +206,8 @@ function locateWin(override?: string): CodexInstall {
         .map((install) => `  ${install.name}\n  ${install.installLocation ?? "(install location is hidden by Windows)"}`)
         .join("\n");
       throw new Error(
-        `[!] Codex App Not Found\n\n` +
-          `Codex appears to be installed from the Microsoft Store, but Codex++ could not find app.asar under the expected package layout.\n\n` +
+        `[!] ChatGPT / Codex App Not Found\n\n` +
+          `The ChatGPT desktop app appears to be installed from the Microsoft Store, but ChatGPT Layer could not find app.asar under the expected package layout.\n\n` +
           `Store package(s):\n${storeText}\n\n` +
           `Expected one of:\n` +
           `  <package>\\app\\resources\\app.asar\n` +
@@ -207,9 +218,9 @@ function locateWin(override?: string): CodexInstall {
     }
     throw new Error(
       `[!] Codex App Not Found\n\n` +
-        `Ensure Codex is installed in one of the default Windows locations.\n` +
+        `Ensure the ChatGPT / Codex desktop app is installed in one of the default Windows locations.\n` +
         `Tried:\n  ${triedText}\n\n` +
-        `If Codex is somewhere else, rerun with --app pointing at its install folder.`,
+        `If it is somewhere else, rerun with --app pointing at its install folder.`,
     );
   }
   const writableAppRoot = isWindowsAppsPath(appRoot) ? ensureWindowsStoreMirror(appRoot) : appRoot;
@@ -235,7 +246,7 @@ function windowsCodexCandidates(root: string): string[] {
   const candidates: string[] = [];
   try {
     for (const entry of readdirSync(root)) {
-      if (!/\bcodex\b/i.test(entry)) continue;
+      if (!/\bcodex\b/i.test(entry) && !/\bchatgpt\b/i.test(entry)) continue;
       const dir = join(root, entry);
       try {
         if (!statSync(dir).isDirectory()) continue;
@@ -306,10 +317,16 @@ function isWinCodexRoot(appRoot: string): boolean {
 
 function findWinExecutable(appRoot: string): string {
   try {
+    // Store builds ship a small Codex.exe helper alongside ChatGPT.exe,
+    // which is the actual Electron desktop application.
+    const chatGpt = join(appRoot, "ChatGPT.exe");
+    if (existsSync(chatGpt)) return chatGpt;
+    const chatgptLower = readdirSync(appRoot).find((name) => /^chatgpt\.exe$/i.test(name));
+    if (chatgptLower) return join(appRoot, chatgptLower);
     const exe = readdirSync(appRoot).find((name) => /\.exe$/i.test(name) && /\bcodex\b/i.test(name));
     if (exe) return join(appRoot, exe);
   } catch {}
-  return join(appRoot, "Codex.exe");
+  return join(appRoot, "ChatGPT.exe");
 }
 
 function findWindowsStoreCodexInstalls(): { name: string; installLocation: string | null }[] {
@@ -323,7 +340,7 @@ function findWindowsStoreCodexInstalls(): { name: string; installLocation: strin
         "-Command",
         [
           "$pkgs = Get-AppxPackage | Where-Object {",
-          "$_.Name -match 'Codex' -or $_.PackageFullName -match 'Codex' -or $_.InstallLocation -match 'Codex'",
+          "$_.Name -eq 'OpenAI.Codex' -or $_.PublisherId -eq '2p2nqsd0c76g0' -or $_.Name -match 'Codex|ChatGPT' -or $_.PackageFullName -match 'Codex|ChatGPT' -or $_.InstallLocation -match 'Codex|ChatGPT'",
           "} | Select-Object Name, InstallLocation;",
           "if ($pkgs) { $pkgs | ConvertTo-Json -Compress }",
         ].join(" "),

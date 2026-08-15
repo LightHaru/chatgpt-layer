@@ -349,8 +349,8 @@ test("Codex main candidates include nested recovered Vite bundle files", () => {
 test("patch failure report URL includes a prefilled GitHub issue", () => {
   const url = new URL(buildPatchFailureIssueUrl("Codex window services hook point not found"));
 
-  assert.equal(url.origin + url.pathname, "https://github.com/b-nnett/codex-plusplus/issues/new");
-  assert.equal(url.searchParams.get("title"), "Codex++ failed to patch Codex after update");
+  assert.equal(url.origin + url.pathname, "https://github.com/LightHaru/chatgpt-layer/issues/new");
+  assert.equal(url.searchParams.get("title"), "ChatGPT Layer failed to patch ChatGPT after update");
   assert.match(url.searchParams.get("body") ?? "", /Codex window services hook point not found/);
   assert.match(url.searchParams.get("body") ?? "", /Platform:/);
 });
@@ -358,11 +358,11 @@ test("patch failure report URL includes a prefilled GitHub issue", () => {
 test("CLI failure report URL includes command and environment details", () => {
   const url = new URL(buildCliFailureIssueUrl("install", "codesign not installed"));
 
-  assert.equal(url.origin + url.pathname, "https://github.com/b-nnett/codex-plusplus/issues/new");
-  assert.equal(url.searchParams.get("title"), "Codex++ install failed");
+  assert.equal(url.origin + url.pathname, "https://github.com/LightHaru/chatgpt-layer/issues/new");
+  assert.equal(url.searchParams.get("title"), "ChatGPT Layer install failed");
   assert.match(url.searchParams.get("body") ?? "", /codexplusplus install/);
   assert.match(url.searchParams.get("body") ?? "", /codesign not installed/);
-  assert.match(url.searchParams.get("body") ?? "", /Codex\+\+:/);
+  assert.match(url.searchParams.get("body") ?? "", /ChatGPT Layer:/);
   assert.match(url.searchParams.get("body") ?? "", /Node:/);
 });
 

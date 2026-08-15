@@ -43,7 +43,7 @@ function wrap<T extends (...args: never[]) => unknown | Promise<unknown>>(fn: T)
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
         const command = process.argv[2];
-        console.error("\n" + kleur.red().bold("✗ codex-plusplus failed"));
+        console.error("\n" + kleur.red().bold("✗ ChatGPT Layer failed"));
         console.error(msg);
         console.error("");
         console.error(
@@ -102,16 +102,16 @@ function maybeShowPatchFailedAlert(message: string): void {
   showPatchFailedAlert(message);
 }
 
-const prog = sade("codex-plusplus")
+const prog = sade("chatgpt-layer")
   .version(CODEX_PLUSPLUS_VERSION)
-  .describe("Tweak system for the Codex desktop app");
+  .describe("Tweak system for the ChatGPT desktop app (aliases: cgl, codexplusplus)");
 
 capKnownLogFiles();
 
 prog
   .command("install")
-  .describe("Patch Codex.app to load the tweak runtime")
-  .option("--app", "Path to Codex.app / install dir (auto-detected if omitted)")
+  .describe("Patch ChatGPT / Codex desktop app to load the tweak runtime")
+  .option("--app", "Path to ChatGPT.app / Codex.app / install dir (auto-detected if omitted)")
   .option("--fuse", "Flip Electron's embedded asar integrity fuse", true)
   .option("--resign", "Code sign Codex.app on macOS", true)
   .option("--local", "Use a stable local signing identity on macOS")
@@ -147,7 +147,7 @@ prog
 prog
   .command("update")
   .describe("Update Codex++ from the latest GitHub release, rebuild, then repair the app patch")
-  .option("--repo", "GitHub repo to download (default: b-nnett/codex-plusplus)")
+  .option("--repo", "GitHub repo to download (default: LightHaru/chatgpt-layer)")
   .option("--ref", "Git ref to download (default: latest GitHub release)")
   .option("--repair", "Run repair after updating", true)
   .option("--quiet", "Suppress non-error output")
@@ -158,7 +158,7 @@ prog
 prog
   .command("self-update")
   .describe("Alias for update")
-  .option("--repo", "GitHub repo to download (default: b-nnett/codex-plusplus)")
+  .option("--repo", "GitHub repo to download (default: LightHaru/chatgpt-layer)")
   .option("--ref", "Git ref to download (default: latest GitHub release)")
   .option("--repair", "Run repair after updating", true)
   .option("--quiet", "Suppress non-error output")

@@ -687,13 +687,15 @@ function installWindowsManagedAppLauncher(codex: CodexInstall): { shortcutPaths:
     : null;
   if (!startMenuRoot) return { shortcutPaths };
 
-  const startMenuShortcut = join(startMenuRoot, "Codex++.lnk");
-  if (createWindowsCodexShortcut(startMenuShortcut, codex.executable)) {
-    shortcutPaths.push(startMenuShortcut);
-  }
-  const desktopShortcut = join(homedir(), "Desktop", "Codex++.lnk");
-  if (createWindowsCodexShortcut(desktopShortcut, codex.executable)) {
-    shortcutPaths.push(desktopShortcut);
+  for (const name of ["ChatGPT Layer.lnk", "Codex++.lnk"]) {
+    const startMenuShortcut = join(startMenuRoot, name);
+    if (createWindowsCodexShortcut(startMenuShortcut, codex.executable)) {
+      shortcutPaths.push(startMenuShortcut);
+    }
+    const desktopShortcut = join(homedir(), "Desktop", name);
+    if (createWindowsCodexShortcut(desktopShortcut, codex.executable)) {
+      shortcutPaths.push(desktopShortcut);
+    }
   }
 
   return { shortcutPaths };

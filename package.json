@@ -1,18 +1,18 @@
 {
   "name": "codex-plusplus",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "license": "MIT",
-  "description": "Tweak system for the OpenAI Codex desktop app",
+  "description": "ChatGPT Layer - local tweaks for the ChatGPT desktop app (fork of Codex++)",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/b-nnett/codex-plusplus.git"
+    "url": "https://github.com/LightHaru/chatgpt-layer.git"
   },
   "bugs": {
-    "url": "https://github.com/b-nnett/codex-plusplus/issues"
+    "url": "https://github.com/LightHaru/chatgpt-layer/issues"
   },
-  "homepage": "https://github.com/b-nnett/codex-plusplus#readme",
+  "homepage": "https://github.com/LightHaru/chatgpt-layer#readme",
   "workspaces": [
     "packages/*"
   ],
@@ -33,7 +33,9 @@
   },
   "bin": {
     "codexplusplus": "bin/codexplusplus.js",
-    "codex-plusplus": "bin/codexplusplus.js"
+    "codex-plusplus": "bin/codexplusplus.js",
+    "chatgpt-layer": "bin/codexplusplus.js",
+    "cgl": "bin/codexplusplus.js"
   },
   "dependencies": {
     "@electron/asar": "^3.4.0",

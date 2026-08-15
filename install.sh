@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CODEX_PLUSPLUS_REPO:-b-nnett/codex-plusplus}"
+REPO="${CHATGPT_LAYER_REPO:-${CODEX_PLUSPLUS_REPO:-LightHaru/chatgpt-layer}}"
 REF="${CODEX_PLUSPLUS_REF:-main}"
 
 fail() {
