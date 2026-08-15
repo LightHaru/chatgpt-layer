@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-15T20:25:00.000Z",
+  "generatedAt": "2026-08-15T20:46:28Z",
   "entries": [
     {
       "id": "me.lightharu.codex-accounts",
       "manifest": {
         "id": "me.lightharu.codex-accounts",
         "name": "Codex Accounts",
-        "version": "2.5.6",
+        "version": "2.5.7",
         "githubRepo": "LightHaru/codex-plusplus-accounts",
         "description": "Switch ChatGPT / Codex accounts from the avatar menu without restarting. Add accounts in a separate login window. Auto-switch when quota runs out.",
         "homepage": "https://github.com/LightHaru/codex-plusplus-accounts",
@@ -26,10 +26,10 @@
         "main": "index.bundled.js"
       },
       "repo": "LightHaru/codex-plusplus-accounts",
-      "approvedCommitSha": "aa0ea3890dcdc1dd2c50d5aef685f0ca8d4f9281",
-      "approvedAt": "2026-08-15T19:32:27Z",
+      "approvedCommitSha": "a431b876494dcf71f2e1008c6de55cf924d3a6e6",
+      "approvedAt": "2026-08-15T20:46:28Z",
       "approvedBy": "LightHaru",
-      "releaseUrl": "https://github.com/LightHaru/codex-plusplus-accounts/releases/tag/v2.5.5",
+      "releaseUrl": "https://github.com/LightHaru/codex-plusplus-accounts/releases/tag/v2.5.7",
       "reviewUrl": "https://github.com/LightHaru/codex-plusplus-accounts"
     }
   ]

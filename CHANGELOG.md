@@ -4,6 +4,24 @@ All notable changes to ChatGPT Layer (fork of Codex++) are documented here.
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
 
+## 1.1.2
+
+Premium README, plus in-app GitHub Release updates for store-listed tweaks.
+
+### Added
+
+- Tweaks page: **Update Available** badge on the Tweaks nav, a banner when an installed store-listed tweak has a newer GitHub Release, and an **Update** button that installs from that release instead of only opening the URL.
+- Tweaks sidebar badge counts those pending updates.
+- Detection is store-listed tweaks only (current store listing: Codex Accounts). Authors must publish a GitHub Release with a semver tag.
+
+### Changed
+
+- README rewritten as a bilingual product page (English + Tiếng Việt): centered logo, badges, launch notes for `ChatGPT.exe`, commands, paths, Tweak Store, repair.
+
+### Ghi chú
+
+README mới song ngữ. Update tweak trong app chỉ áp dụng listing trên Store (hiện là Codex Accounts); tác giả cần cắt GitHub Release với tag semver thì Layer mới hiện nút Update.
+
 ## 1.1.1
 
 Release notes: [docs/releases/1.1.1.md](docs/releases/1.1.1.md)

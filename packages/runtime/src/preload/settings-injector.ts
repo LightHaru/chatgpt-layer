@@ -35,7 +35,7 @@ import {
   type TweakStorePublishSubmission,
 } from "../tweak-store";
 
-const CODEX_PLUSPLUS_RELEASES_URL = "https://github.com/b-nnett/codex-plusplus/releases";
+const CODEX_PLUSPLUS_RELEASES_URL = "https://github.com/LightHaru/chatgpt-layer/releases";
 
 // Mirrors the runtime's main-side ListedTweak shape (kept in sync manually).
 interface ListedTweak {
@@ -223,6 +223,9 @@ const state: InjectorState = {
   tweakStoreError: null,
 };
 
+/** Prevents renderTweaksPage from re-invoking a forced GitHub check in a loop. */
+let tweaksPageForceCheckStarted = false;
+
 function plog(msg: string, extra?: unknown): void {
   ipcRenderer.send(
     "codexpp:preload-log",
@@ -364,6 +367,7 @@ export function registerPage(
 /** Called by the tweak host after fetching the tweak list from main. */
 export function setListedTweaks(list: ListedTweak[]): void {
   state.listedTweaks = list;
+  refreshInstalledTweaksUpdateBadge();
   if (state.activePage?.kind === "tweaks") rerender();
 }
 
@@ -453,6 +457,7 @@ function tryInject(): void {
   const configBtn = makeSidebarItem("Config", configIconSvg());
   const tweaksBtn = makeSidebarItem("Tweaks", tweaksIconSvg());
   const storeBtn = makeSidebarItem("Tweak Store", storeIconSvg());
+  appendSidebarStoreUpdateBadge(tweaksBtn);
   appendSidebarStoreUpdateBadge(storeBtn);
 
   configBtn.addEventListener("click", (e) => {
@@ -816,7 +821,7 @@ function appendSidebarStoreUpdateBadge(btn: HTMLButtonElement): void {
   const badge = document.createElement("span");
   badge.dataset.codexppStoreUpdateBadge = "true";
   badge.hidden = true;
-  badge.title = "Installed tweaks with approved updates";
+  badge.title = "Installed tweaks with updates";
   badge.className = "inline-flex shrink-0 items-center justify-center";
   Object.assign(badge.style, {
     position: "absolute",
@@ -915,6 +920,7 @@ function applyNavActive(btn: HTMLButtonElement, active: boolean): void {
 // ─────────────────────────────────────────────────────────── activation ──
 
 function activatePage(page: ActivePage): void {
+  if (page.kind !== "tweaks") tweaksPageForceCheckStarted = false;
   const content = findContentArea();
   if (!content) {
     plog("activate: content area not found");
@@ -962,6 +968,7 @@ function activatePage(page: ActivePage): void {
 }
 
 function restoreCodexView(): void {
+  tweaksPageForceCheckStarted = false;
   plog("restore codex view");
   const content = findContentArea();
   if (!content) return;
@@ -1656,7 +1663,7 @@ function refreshTweakStoreGrid(
       grid.dataset.codexppStore = "";
       grid.removeAttribute("aria-busy");
       source.textContent = "Live registry unavailable";
-      updateStoreUpdateBadge(null);
+      refreshInstalledTweaksUpdateBadge();
       grid.textContent = "";
       grid.appendChild(storeMessageCard("Could not load tweak store", String(e)));
     })
@@ -1667,8 +1674,8 @@ function refreshTweakStoreGrid(
 
 function warmTweakStore(): void {
   if (state.tweakStore || state.tweakStorePromise) return;
-  void getTweakStore().then((store) => {
-    updateStoreUpdateBadge(outdatedInstalledStoreCount(store.entries));
+  void getTweakStore().then(() => {
+    refreshInstalledTweaksUpdateBadge();
   });
 }
 
@@ -1701,7 +1708,7 @@ function renderTweakStoreGrid(grid: HTMLElement, source: HTMLElement): void {
   const entries = store.entries;
   grid.removeAttribute("aria-busy");
   source.textContent = `Refreshed ${new Date(store.fetchedAt).toLocaleString()}`;
-  updateStoreUpdateBadge(outdatedInstalledStoreCount(entries));
+  refreshInstalledTweaksUpdateBadge();
   grid.textContent = "";
   if (store.entries.length === 0) {
     grid.appendChild(storeMessageCard("No tweaks yet", "Use Publish Tweak to submit the first one."));
@@ -1773,7 +1780,7 @@ function tweakStoreCard(entry: TweakStoreEntryView): HTMLElement {
           showStoreToast(`${entry.manifest.name} installed.`);
           showStoreButtonInstalled(button);
           versions.replaceChildren(tweakStoreVersionBadge(entry, entry.manifest.version));
-          updateStoreUpdateBadge(Math.max(0, currentStoreUpdateBadgeCount() - 1));
+          refreshInstalledTweaksUpdateBadge();
           setTimeout(() => {
             actions.replaceChildren(storeStatusPill("Installed"));
             if (grid && source) refreshTweakStoreGrid(grid, source, undefined, true);
@@ -2043,17 +2050,38 @@ function setSidebarCodexPlusPlusUpdateButton(check: CodexPlusPlusUpdateCheck | n
       : "Open Codex++ update";
 }
 
+function refreshInstalledTweaksUpdateBadge(): void {
+  updateStoreUpdateBadge(installedTweaksUpdateCount());
+}
+
+function installedTweaksUpdateCount(): number {
+  const ids = new Set<string>();
+  for (const t of state.listedTweaks) {
+    if (t.update?.updateAvailable) ids.add(t.manifest.id);
+  }
+  const entries = state.tweakStore?.entries;
+  if (entries) {
+    for (const entry of entries) {
+      if (entry.installed && entry.installed.version !== entry.manifest.version) {
+        ids.add(entry.id);
+      }
+    }
+  }
+  return ids.size;
+}
+
 function updateStoreUpdateBadge(count: number | null): void {
-  const badge = document.querySelector<HTMLElement>("[data-codexpp-store-update-badge]");
-  if (!badge) return;
-  badge.dataset.codexppStoreUpdateCount = count === null ? "" : String(count);
-  applyStoreUpdateBadgeStyle(badge, count);
-  badge.hidden = count === null || count <= 0;
-  badge.textContent = count && count > 0 ? String(count) : "";
-  badge.title =
-    count && count > 0
-      ? `${count} installed tweak${count === 1 ? "" : "s"} can be updated`
-      : "Installed tweaks are up to date";
+  const badges = Array.from(document.querySelectorAll<HTMLElement>("[data-codexpp-store-update-badge]"));
+  for (const badge of badges) {
+    badge.dataset.codexppStoreUpdateCount = count === null ? "" : String(count);
+    applyStoreUpdateBadgeStyle(badge, count);
+    badge.hidden = count === null || count <= 0;
+    badge.textContent = count && count > 0 ? String(count) : "";
+    badge.title =
+      count && count > 0
+        ? "Installed tweaks with updates"
+        : "Installed tweaks are up to date";
+  }
 }
 
 function applyStoreUpdateBadgeStyle(badge: HTMLElement, count: number | null): void {
@@ -2285,6 +2313,9 @@ function shortSha(value: string): string {
 }
 
 function renderTweaksPage(sectionsWrap: HTMLElement): void {
+  maybeForceRefreshTweakUpdates();
+  refreshInstalledTweaksUpdateBadge();
+
   const openBtn = openInPlaceButton("Open Tweaks Folder", () => {
     void ipcRenderer.invoke("codexpp:reveal", tweaksPath());
   });
@@ -2350,6 +2381,11 @@ function renderTweaksPage(sectionsWrap: HTMLElement): void {
   wrap.className = "flex flex-col gap-2";
   wrap.appendChild(sectionTitle("Installed Tweaks", trailing));
 
+  const availableUpdates = state.listedTweaks.filter((t) => t.update?.updateAvailable);
+  if (availableUpdates.length > 0) {
+    wrap.appendChild(tweakUpdatesBanner(availableUpdates));
+  }
+
   const card = roundedCard();
   for (const t of state.listedTweaks) {
     card.appendChild(
@@ -2362,6 +2398,114 @@ function renderTweaksPage(sectionsWrap: HTMLElement): void {
   }
   wrap.appendChild(card);
   sectionsWrap.appendChild(wrap);
+}
+
+function maybeForceRefreshTweakUpdates(): void {
+  if (tweaksPageForceCheckStarted) return;
+  tweaksPageForceCheckStarted = true;
+  void ipcRenderer
+    .invoke("codexpp:list-tweaks", { force: true })
+    .then((list) => {
+      const next = list as ListedTweak[];
+      const prevKey = listedTweaksUpdateKey(state.listedTweaks);
+      const nextKey = listedTweaksUpdateKey(next);
+      state.listedTweaks = next;
+      refreshInstalledTweaksUpdateBadge();
+      if (prevKey !== nextKey && state.activePage?.kind === "tweaks") rerender();
+    })
+    .catch((e) => {
+      plog("tweak GitHub update check failed", String(e));
+      tweaksPageForceCheckStarted = false;
+    });
+}
+
+function listedTweaksUpdateKey(list: ListedTweak[]): string {
+  return list
+    .map((t) => `${t.manifest.id}:${t.manifest.version}:${t.update?.updateAvailable ? t.update.latestVersion ?? "1" : "0"}`)
+    .join("|");
+}
+
+function tweakUpdatesBanner(updates: ListedTweak[]): HTMLElement {
+  const card = roundedCard();
+  const row = document.createElement("div");
+  row.className = "flex items-center justify-between gap-4 p-3";
+  const msg = document.createElement("div");
+  msg.className = "min-w-0 text-sm text-token-text-primary";
+  if (updates.length === 1) {
+    const t = updates[0]!;
+    const version = t.update?.latestVersion ? ` ${t.update.latestVersion}` : "";
+    msg.textContent = `${t.manifest.name}${version} is available`;
+  } else {
+    msg.textContent = `${updates.length} tweak updates available`;
+  }
+  row.appendChild(msg);
+  const errorEl = document.createElement("div");
+  errorEl.className = "text-token-charts-red px-3 pb-3 text-sm";
+  errorEl.hidden = true;
+  if (updates.length === 1) {
+    const t = updates[0]!;
+    const updateBtn = compactButton("Update", () => {
+      startGithubTweakInstall(t, updateBtn, errorEl);
+    });
+    row.appendChild(updateBtn);
+  }
+  card.appendChild(row);
+  card.appendChild(errorEl);
+  return card;
+}
+
+function startGithubTweakInstall(
+  t: ListedTweak,
+  button: HTMLButtonElement,
+  errorHost?: HTMLElement,
+): void {
+  button.disabled = true;
+  button.textContent = "Updating…";
+  if (errorHost) {
+    errorHost.hidden = true;
+    errorHost.textContent = "";
+  }
+  void ipcRenderer
+    .invoke("codexpp:install-github-tweak", t.manifest.id)
+    .then(() =>
+      ipcRenderer.invoke("codexpp:reload-tweaks").catch((err) => {
+        plog("force reload (main) failed", String(err));
+      }),
+    )
+    .then(() => {
+      location.reload();
+    })
+    .catch((e) => {
+      button.disabled = false;
+      button.textContent = "Update";
+      const message = String((e as Error)?.message ?? e);
+      if (errorHost) {
+        errorHost.hidden = false;
+        errorHost.textContent = message;
+        if (t.update?.releaseUrl && !errorHost.querySelector("[data-codexpp-release-notes]")) {
+          errorHost.appendChild(document.createTextNode(" "));
+          const notes = releaseNotesButton(t.update.releaseUrl);
+          notes.dataset.codexppReleaseNotes = "true";
+          errorHost.appendChild(notes);
+        }
+      } else {
+        plog("github tweak install failed", message);
+      }
+    });
+}
+
+function releaseNotesButton(releaseUrl: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className =
+    "user-select-none no-drag cursor-interaction inline-flex h-8 items-center whitespace-nowrap px-1 text-xs text-token-text-secondary hover:underline disabled:cursor-not-allowed disabled:opacity-40";
+  btn.textContent = "Release notes";
+  btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void ipcRenderer.invoke("codexpp:open-external", releaseUrl);
+  });
+  return btn;
 }
 
 function tweakRow(
@@ -2377,6 +2521,10 @@ function tweakRow(
   const cell = document.createElement("div");
   cell.className = "flex flex-col";
   if (!t.enabled) cell.style.opacity = "0.7";
+
+  const errorEl = document.createElement("div");
+  errorEl.className = "text-token-charts-red px-3 pb-3 text-sm";
+  errorEl.hidden = true;
 
   const header = document.createElement("div");
   header.className = "flex items-start justify-between gap-4 p-3";
@@ -2514,12 +2662,14 @@ function tweakRow(
       : `Open ${pages.map((p) => p.page.title).join(", ")}`;
     right.appendChild(configureBtn);
   }
-  if (t.update?.updateAvailable && t.update.releaseUrl) {
-    right.appendChild(
-      compactButton("Review Release", () => {
-        void ipcRenderer.invoke("codexpp:open-external", t.update!.releaseUrl);
-      }),
-    );
+  if (t.update?.updateAvailable) {
+    const updateBtn = compactButton("Update", () => {
+      startGithubTweakInstall(t, updateBtn, errorEl);
+    });
+    right.appendChild(updateBtn);
+    if (t.update.releaseUrl) {
+      right.appendChild(releaseNotesButton(t.update.releaseUrl));
+    }
   }
   right.appendChild(
     switchControl(t.enabled, async (next) => {
@@ -2531,6 +2681,7 @@ function tweakRow(
   header.appendChild(right);
 
   cell.appendChild(header);
+  cell.appendChild(errorEl);
 
   // If the tweak is enabled and registered settings sections, render those
   // bodies as nested rows beneath the header inside the same cell.

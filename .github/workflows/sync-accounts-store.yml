@@ -1,0 +1,125 @@
+name: Sync Codex Accounts store
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 01:00 UTC weekdays = 08:00 Asia/Saigon
+    - cron: "0 1 * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pin store entry to the latest Codex Accounts release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = "store/index.json";
+          const ACCOUNTS_ID = "me.lightharu.codex-accounts";
+          const ACCOUNTS_REPO = "LightHaru/codex-plusplus-accounts";
+          const VERSION_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/;
+          const SHA_RE = /^[a-f0-9]{40}$/i;
+
+          function normalizeVersion(v) {
+            return String(v).trim().replace(/^v/i, "");
+          }
+
+          function compareVersions(a, b) {
+            const av = VERSION_RE.exec(a);
+            const bv = VERSION_RE.exec(b);
+            if (!av || !bv) return 0;
+            for (let i = 1; i <= 3; i++) {
+              const diff = Number(av[i]) - Number(bv[i]);
+              if (diff !== 0) return diff;
+            }
+            return 0;
+          }
+
+          async function githubJson(url) {
+            const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "";
+            const res = await fetch(url, {
+              headers: {
+                Accept: "application/vnd.github+json",
+                "User-Agent": "chatgpt-layer-store-sync",
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+            });
+            if (!res.ok) {
+              throw new Error(`${url} -> GitHub returned ${res.status}`);
+            }
+            return res.json();
+          }
+
+          (async () => {
+            const release = await githubJson(
+              `https://api.github.com/repos/${ACCOUNTS_REPO}/releases/latest`,
+            );
+            const tag = typeof release.tag_name === "string" ? release.tag_name : "";
+            if (!tag) throw new Error("Latest Codex Accounts release has no tag_name");
+            const latestVersion = normalizeVersion(tag);
+            if (!VERSION_RE.test(latestVersion)) {
+              throw new Error(`Latest tag ${tag} is not semver`);
+            }
+
+            const store = JSON.parse(fs.readFileSync(path, "utf8"));
+            const entry = Array.isArray(store.entries)
+              ? store.entries.find((item) => item && item.id === ACCOUNTS_ID)
+              : null;
+            if (!entry || !entry.manifest) {
+              throw new Error(`Store entry not found: ${ACCOUNTS_ID}`);
+            }
+
+            const currentVersion = normalizeVersion(entry.manifest.version ?? "");
+            if (compareVersions(latestVersion, currentVersion) <= 0) {
+              console.log(`Already current: store ${currentVersion}, latest ${latestVersion}`);
+              process.exit(0);
+            }
+
+            const commit = await githubJson(
+              `https://api.github.com/repos/${ACCOUNTS_REPO}/commits/${encodeURIComponent(tag)}`,
+            );
+            const sha = typeof commit.sha === "string" ? commit.sha : "";
+            if (!SHA_RE.test(sha)) {
+              throw new Error(`Could not resolve a full commit SHA for ${ACCOUNTS_REPO}@${tag}`);
+            }
+
+            const now = new Date().toISOString();
+            entry.manifest.version = latestVersion;
+            entry.approvedCommitSha = sha;
+            entry.approvedAt = now;
+            entry.approvedBy = "LightHaru";
+            entry.releaseUrl =
+              typeof release.html_url === "string" && release.html_url
+                ? release.html_url
+                : `https://github.com/${ACCOUNTS_REPO}/releases/tag/${tag}`;
+            store.generatedAt = now;
+
+            fs.writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`);
+            console.log(`Updated ${ACCOUNTS_ID} to ${latestVersion} (${sha})`);
+          })().catch((err) => {
+            console.error(err);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Commit store pin if it changed
+        run: |
+          set -euo pipefail
+          git add store/index.json
+          if git diff --cached --quiet; then
+            echo "Store entry already current; no commit."
+            exit 0
+          fi
+          VERSION="$(node -e "const s=require('./store/index.json'); const e=s.entries.find((x)=>x.id==='me.lightharu.codex-accounts'); process.stdout.write(e && e.manifest && e.manifest.version ? e.manifest.version : '')")"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(store): Codex Accounts ${VERSION}"
+          git push

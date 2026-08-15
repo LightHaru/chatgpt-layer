@@ -46,6 +46,7 @@ import type {
 } from "@codex-plusplus/sdk";
 import {
   DEFAULT_TWEAK_STORE_INDEX_URL,
+  isFullCommitSha,
   normalizeGitHubRepo,
   normalizeStoreRegistry,
   shuffleStoreEntries,
@@ -76,8 +77,8 @@ const INSTALLER_STATE_FILE = join(userRoot, "state.json");
 const UPDATE_MODE_FILE = join(userRoot, "update-mode.json");
 const SELF_UPDATE_STATE_FILE = join(userRoot, "self-update-state.json");
 const SIGNED_CODEX_BACKUP = join(userRoot, "backup", "Codex.app");
-const CODEX_PLUSPLUS_VERSION = "1.0.0";
-const CODEX_PLUSPLUS_REPO = "b-nnett/codex-plusplus";
+const CODEX_PLUSPLUS_VERSION = "1.1.2";
+const CODEX_PLUSPLUS_REPO = "LightHaru/chatgpt-layer";
 const TWEAK_STORE_INDEX_URL = process.env.CODEX_PLUSPLUS_STORE_INDEX_URL ?? DEFAULT_TWEAK_STORE_INDEX_URL;
 const CODEX_WINDOW_SERVICES_KEY = "__codexpp_window_services__";
 
@@ -111,7 +112,7 @@ interface PersistedState {
   };
   /** Per-tweak enable flags. Missing entries default to enabled. */
   tweaks?: Record<string, { enabled?: boolean }>;
-  /** Cached GitHub release checks. Runtime never auto-installs updates. */
+  /** Cached GitHub release checks. Runtime never auto-installs; the user can click Update on the Tweaks page. */
   tweakUpdateChecks?: Record<string, TweakUpdateCheck>;
 }
 
@@ -562,17 +563,10 @@ app.on("will-quit", () => {
 });
 
 // 3. IPC: expose tweak metadata + reveal-in-finder.
-ipcMain.handle("codexpp:list-tweaks", async () => {
-  await Promise.all(tweakState.discovered.map((t) => ensureTweakUpdateCheck(t)));
-  const updateChecks = readState().tweakUpdateChecks ?? {};
-  return tweakState.discovered.map((t) => ({
-    manifest: t.manifest,
-    entry: t.entry,
-    dir: t.dir,
-    entryExists: existsSync(t.entry),
-    enabled: isTweakEnabled(t.manifest.id),
-    update: updateChecks[t.manifest.id] ?? null,
-  }));
+ipcMain.handle("codexpp:list-tweaks", async (_e, opts?: { force?: boolean } | boolean) => {
+  const force = opts === true || (opts !== null && typeof opts === "object" && opts.force === true);
+  await Promise.all(tweakState.discovered.map((t) => ensureTweakUpdateCheck(t, force)));
+  return listedTweaksSnapshot();
 });
 
 ipcMain.handle("codexpp:get-tweak-enabled", (_e, id: string) => isTweakEnabled(id));
@@ -673,6 +667,10 @@ ipcMain.handle("codexpp:install-store-tweak", async (_e, id: string) => {
   await installStoreTweak(entry);
   reloadTweaks("store-install", tweakLifecycleDeps);
   return { installed: entry.id };
+});
+
+ipcMain.handle("codexpp:install-github-tweak", async (_e, id: string) => {
+  return installGithubReleaseTweak(id);
 });
 
 ipcMain.handle("codexpp:prepare-tweak-store-submission", async (_e, repoInput: string) => {
@@ -1063,12 +1061,26 @@ async function ensureCodexPlusPlusUpdateCheck(force = false): Promise<CodexPlusP
   return check;
 }
 
-async function ensureTweakUpdateCheck(t: DiscoveredTweak): Promise<void> {
+function listedTweaksSnapshot() {
+  const updateChecks = readState().tweakUpdateChecks ?? {};
+  return tweakState.discovered.map((t) => ({
+    manifest: t.manifest,
+    entry: t.entry,
+    dir: t.dir,
+    entryExists: existsSync(t.entry),
+    enabled: isTweakEnabled(t.manifest.id),
+    update: updateChecks[t.manifest.id] ?? null,
+  }));
+}
+
+async function ensureTweakUpdateCheck(t: DiscoveredTweak, force = false): Promise<void> {
   const id = t.manifest.id;
   const repo = t.manifest.githubRepo;
+  if (!repo) return;
   const state = readState();
   const cached = state.tweakUpdateChecks?.[id];
   if (
+    !force &&
     cached &&
     cached.repo === repo &&
     cached.currentVersion === t.manifest.version &&
@@ -1094,6 +1106,74 @@ async function ensureTweakUpdateCheck(t: DiscoveredTweak): Promise<void> {
   state.tweakUpdateChecks ??= {};
   state.tweakUpdateChecks[id] = check;
   writeState(state);
+}
+
+async function installGithubReleaseTweak(id: string): Promise<{
+  installed: string;
+  version: string;
+  commitSha: string;
+}> {
+  const tweak = tweakState.discovered.find((item) => item.manifest.id === id);
+  if (!tweak) throw new Error(`unknown tweak: ${id}`);
+  if (!tweak.manifest.githubRepo) {
+    throw new Error(`${tweak.manifest.name} has no githubRepo in its manifest`);
+  }
+
+  let repo: string;
+  try {
+    repo = normalizeGitHubRepo(tweak.manifest.githubRepo);
+  } catch {
+    throw new Error(`${tweak.manifest.name} has an invalid githubRepo: ${tweak.manifest.githubRepo}`);
+  }
+
+  const { registry } = await fetchTweakStoreRegistry();
+  const storeEntry = registry.entries.find((entry) => {
+    if (entry.id !== id) return false;
+    try {
+      return normalizeGitHubRepo(entry.repo) === repo;
+    } catch {
+      return entry.repo === repo;
+    }
+  });
+  if (!storeEntry) {
+    throw new Error(
+      `${tweak.manifest.name} is not listed in the ChatGPT Layer tweak store, so it can't be updated from GitHub.`,
+    );
+  }
+
+  const release = await fetchLatestRelease(repo, tweak.manifest.version);
+  if (!release.latestTag) {
+    throw new Error(release.error ?? `No GitHub release found for ${repo}`);
+  }
+  const latestVersion = normalizeVersion(release.latestTag);
+  if (compareVersions(latestVersion, normalizeVersion(tweak.manifest.version)) <= 0) {
+    throw new Error(`${tweak.manifest.name} ${tweak.manifest.version} is already up to date`);
+  }
+
+  const commit = await fetchGithubJson<{ sha?: string }>(
+    `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(release.latestTag)}`,
+  );
+  const commitSha = typeof commit.sha === "string" ? commit.sha : "";
+  if (!isFullCommitSha(commitSha)) {
+    throw new Error(`Could not resolve a full commit SHA for ${repo}@${release.latestTag}`);
+  }
+
+  const entry: TweakStoreEntry = {
+    ...storeEntry,
+    approvedCommitSha: commitSha,
+    releaseUrl: release.releaseUrl ?? storeEntry.releaseUrl,
+    manifest: {
+      ...storeEntry.manifest,
+      version: latestVersion,
+    },
+  };
+  assertStoreEntryPlatformCompatible(entry);
+  assertStoreEntryRuntimeCompatible(entry);
+  await installStoreTweak(entry);
+  reloadTweaks("github-release-install", tweakLifecycleDeps);
+  const installed = tweakState.discovered.find((item) => item.manifest.id === id) ?? tweak;
+  await ensureTweakUpdateCheck(installed, true);
+  return { installed: id, version: latestVersion, commitSha };
 }
 
 async function fetchLatestRelease(
