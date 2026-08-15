@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import kleur from "kleur";
 
-const COMMANDS = ["codexplusplus", "codex-plusplus"] as const;
+const COMMANDS = ["chatgpt-layer", "cgl", "codexplusplus", "codex-plusplus"] as const;
 
 export interface CliShimResult {
   shimDir: string;
@@ -28,7 +28,7 @@ export function installCliShims(shimDir: string): CliShimResult {
 }
 
 export function formatCliShimResult(result: CliShimResult): string {
-  const command = kleur.cyan("codexplusplus");
+  const command = kleur.cyan("chatgpt-layer");
   if (result.managedBy === "homebrew") {
     return `Installed CLI: ${command} (Homebrew)`;
   }

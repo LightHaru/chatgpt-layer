@@ -278,8 +278,9 @@ function ensureWindowsStoreMirror(storeAppRoot: string): string {
 
   const packageRoot = dirname(sourceAppRoot);
   const packageName = basename(packageRoot);
+  const familyName = packageName.split("_")[0] || packageName;
   const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-  const mirrorAppRoot = join(local, "codex-plusplus", "store-apps", packageName, "app");
+  const mirrorAppRoot = join(local, "codex-plusplus", "store-apps", familyName, "app");
   mirrorDirectory(sourceAppRoot, mirrorAppRoot);
   return mirrorAppRoot;
 }
