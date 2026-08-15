@@ -201,15 +201,15 @@ export async function install(opts: Opts = {}): Promise<void> {
 
   if (!opts.quiet) {
     console.log();
-    console.log(kleur.green().bold("✓ codex-plusplus installed."));
+    console.log(kleur.green().bold("✓ ChatGPT Layer installed."));
     console.log(`  Tweaks: ${kleur.cyan(paths.tweaks)}`);
     console.log(`  Logs:   ${kleur.cyan(paths.logDir)}`);
     if (launcher) {
-      console.log(`  Launch ${kleur.cyan("Codex++")} from Start Menu or Desktop.`);
+      console.log(`  Launch ${kleur.cyan("ChatGPT Layer")} from Start Menu or Desktop.`);
       console.log(`  Opening the Microsoft Store ${kleur.cyan("Codex")} app directly will launch the unpatched app.`);
     } else {
       console.log();
-      console.log(`  Launch Codex normally; the Tweaks tab will appear in Settings.`);
+      console.log(`  Launch ChatGPT normally; the Tweaks tab will appear in Settings.`);
       console.log();
     }
   }

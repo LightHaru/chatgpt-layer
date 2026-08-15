@@ -19,6 +19,7 @@ test("Windows cleanup removes only Codex++ managed context menu entries", () => 
   assert.match(script, /Remove-Item -LiteralPath \$key -Recurse -Force/);
   assert.match(script, /codex-plusplus-codex\.cmd/);
   assert.match(script, /watcher\.cmd/);
+  assert.match(script, /ChatGPT Layer\.lnk/);
   assert.match(script, /Codex\+\+\.lnk/);
   assert.match(script, /store-apps/);
   assert.match(script, /Get-ScheduledTask -TaskName \$taskName/);
