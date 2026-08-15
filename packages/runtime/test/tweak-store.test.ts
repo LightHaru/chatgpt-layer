@@ -81,7 +81,7 @@ test("publish issue URL pins the commit admins must review", () => {
       iconUrl: "https://example.com/icon.png",
     },
   }));
-  assert.equal(url.origin + url.pathname, "https://github.com/b-nnett/codex-plusplus/issues/new");
+  assert.equal(url.origin + url.pathname, "https://github.com/LightHaru/chatgpt-layer/issues/new");
   assert.equal(url.searchParams.get("title"), "Tweak store review: example/good");
   assert.match(url.searchParams.get("body") ?? "", /1234567890abcdef1234567890abcdef12345678/);
   assert.match(url.searchParams.get("body") ?? "", /Do not approve a different commit/);

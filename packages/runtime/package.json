@@ -1,6 +1,6 @@
 {
   "name": "@codex-plusplus/runtime",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "commonjs",
   "main": "dist/main.js",
   "description": "In-app runtime: discovers tweaks, injects settings UI, hot-reloads.",

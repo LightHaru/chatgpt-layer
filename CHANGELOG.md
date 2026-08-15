@@ -4,6 +4,15 @@ All notable changes to ChatGPT Layer (fork of Codex++) are documented here.
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
 
+## 1.1.1
+
+Release notes: [docs/releases/1.1.1.md](docs/releases/1.1.1.md)
+
+### Changed
+
+- Tweak Store registry now lives in this repo (`store/index.json`) instead of Bennett GitHub Pages.
+- Store listings were cleared; the only reviewed tweak is Codex Accounts 2.5.6.
+
 ## 1.1.0
 
 Release notes: [docs/releases/1.1.0.md](docs/releases/1.1.0.md)

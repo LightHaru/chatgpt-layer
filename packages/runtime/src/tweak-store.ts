@@ -1,9 +1,9 @@
 import type { TweakManifest } from "@codex-plusplus/sdk";
 
 export const DEFAULT_TWEAK_STORE_INDEX_URL =
-  "https://b-nnett.github.io/codex-plusplus/store/index.json";
+  "https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/store/index.json";
 export const TWEAK_STORE_REVIEW_ISSUE_URL =
-  "https://github.com/b-nnett/codex-plusplus/issues/new";
+  "https://github.com/LightHaru/chatgpt-layer/issues/new";
 
 export interface TweakStoreRegistry {
   schemaVersion: 1;
