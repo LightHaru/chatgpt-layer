@@ -8,7 +8,7 @@ import { locateCodex } from "./platform.js";
 import { getOpenReport, type OpenReport } from "./commands/debug.js";
 
 const CODEX_BUNDLE_ID = "com.openai.codex";
-const CODEX_PLUSPLUS_REPO_URL = "https://github.com/b-nnett/codex-plusplus";
+const CODEX_PLUSPLUS_REPO_URL = "https://github.com/LightHaru/chatgpt-layer";
 
 export function showPatchFailedAlert(errorMessage: string): void {
   if (isMacAppManagementError(errorMessage)) {
@@ -17,7 +17,7 @@ export function showPatchFailedAlert(errorMessage: string): void {
   }
 
   const button = showAlert({
-    title: "Codex++ could not patch Codex",
+    title: "ChatGPT Layer could not patch ChatGPT",
     message:
       "Codex was updated, but Codex++ could not reapply itself automatically.\n\n" +
       `${errorMessage}\n\n` +
@@ -34,7 +34,7 @@ export function showPatchFailedAlert(errorMessage: string): void {
 
 function showAppManagementPatchFailedAlert(errorMessage: string): void {
   const button = showAlert({
-    title: "Codex++ needs app repair",
+    title: "ChatGPT Layer needs app repair",
     message: 'Run "codexplusplus repair" in your terminal.',
     buttons: ["Dismiss", "Report Issue on GitHub"],
     defaultButton: "Dismiss",
@@ -318,7 +318,7 @@ function codexOpenReport(appRoot: string): OpenReport | null {
 }
 
 export function buildPatchFailureIssueUrl(errorMessage: string): string {
-  const title = "Codex++ failed to patch Codex after update";
+  const title = "ChatGPT Layer failed to patch ChatGPT after update";
   const body = [
     "## Summary",
     "Codex++ could not reapply its patch after Codex updated.",
@@ -346,7 +346,7 @@ export function buildPatchFailureIssueUrl(errorMessage: string): string {
 
 export function buildCliFailureIssueUrl(command: string | undefined, errorMessage: string): string {
   const commandLabel = command?.trim() || "(unknown command)";
-  const title = `Codex++ ${commandLabel} failed`;
+  const title = `ChatGPT Layer ${commandLabel} failed`;
   const body = [
     "## Summary",
     `\`codexplusplus ${commandLabel}\` failed.`,
@@ -362,7 +362,7 @@ export function buildCliFailureIssueUrl(command: string | undefined, errorMessag
     "```",
     "",
     "## Environment",
-    `- Codex++: ${CODEX_PLUSPLUS_VERSION}`,
+    `- ChatGPT Layer: ${CODEX_PLUSPLUS_VERSION}`,
     `- Platform: ${process.platform}`,
     `- Arch: ${process.arch}`,
     `- Node: ${process.version}`,

@@ -78,7 +78,7 @@ export interface CommandResult {
 export async function selfUpdate(opts: Opts = {}): Promise<void> {
   const paths = ensureUserPaths();
   const config = readRuntimeConfig(paths.configFile);
-  const repo = opts.repo ?? process.env.CODEX_PLUSPLUS_REPO ?? config.updateRepo ?? "b-nnett/codex-plusplus";
+  const repo = opts.repo ?? process.env.CHATGPT_LAYER_REPO ?? process.env.CODEX_PLUSPLUS_REPO ?? config.updateRepo ?? "LightHaru/chatgpt-layer";
   const sourceRoot = findSourceRoot(here);
   const parent = dirname(sourceRoot);
   const work = mkdtempSync(join(tmpdir(), "codexpp-update-"));

@@ -17,15 +17,15 @@ const run = spawnSync(process.execPath, [cli, ...process.argv.slice(2)], {
 });
 
 if (run.error) {
-  console.error(`[!] Could not start codex-plusplus: ${run.error.message}`);
+  console.error(`[!] Could not start ChatGPT Layer: ${run.error.message}`);
   process.exit(1);
 }
 process.exit(run.status ?? 1);
 
 function bootstrap() {
-  console.error("[codex-plusplus] First run from source install; building CLI...");
-  runOrExit(npmCommand(), installArgs(), "install codex-plusplus dependencies");
-  runOrExit(npmCommand(), ["run", "build"], "build codex-plusplus");
+  console.error("[chatgpt-layer] First run from source install; building CLI...");
+  runOrExit(npmCommand(), installArgs(), "install ChatGPT Layer dependencies");
+  runOrExit(npmCommand(), ["run", "build"], "build ChatGPT Layer");
 }
 
 function installArgs() {

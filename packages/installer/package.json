@@ -1,20 +1,22 @@
 {
   "name": "codex-plusplus",
-  "version": "1.0.0",
-  "description": "Installer CLI for codex-plusplus tweak system",
+  "version": "1.1.0",
+  "description": "Installer CLI for ChatGPT Layer (fork of Codex++)",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/b-nnett/codex-plusplus.git",
+    "url": "https://github.com/LightHaru/chatgpt-layer.git",
     "directory": "packages/installer"
   },
   "bugs": {
-    "url": "https://github.com/b-nnett/codex-plusplus/issues"
+    "url": "https://github.com/LightHaru/chatgpt-layer/issues"
   },
-  "homepage": "https://github.com/b-nnett/codex-plusplus#readme",
+  "homepage": "https://github.com/LightHaru/chatgpt-layer#readme",
   "bin": {
     "codexplusplus": "dist/cli.js",
-    "codex-plusplus": "dist/cli.js"
+    "codex-plusplus": "dist/cli.js",
+    "chatgpt-layer": "dist/cli.js",
+    "cgl": "dist/cli.js"
   },
   "main": "dist/cli.js",
   "files": [

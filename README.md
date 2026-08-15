@@ -1,8 +1,11 @@
-# Codex++
+# ChatGPT Layer
 
-Codex++ lets you install local tweaks into the OpenAI Codex desktop app. Tweaks
-can change UI, add settings pages, run main-process code, and use native
-OS-level features through the Codex++ bridge.
+ChatGPT Layer lets you install local tweaks into the OpenAI ChatGPT desktop app
+(the Microsoft Store package is still named OpenAI.Codex). Tweaks can change UI,
+add settings pages, run main-process code, and use native OS-level features
+through the Layer bridge.
+
+This is a maintained fork of Bennett Codex++. Unofficial. Not affiliated with OpenAI.
 [Join the Discord community](https://discord.gg/6bY6gGX36H).
 
 <img width="1413" height="1016" alt="Codex++ settings screenshot" src="https://github.com/user-attachments/assets/ea0b2ffc-c30d-4f68-ae12-dd8d6a997b2f" />
@@ -11,7 +14,7 @@ OS-level features through the Codex++ bridge.
 
 ## TL;DR
 
-Codex++ patches your local Codex app so Codex loads a small Codex++ runtime on
+ChatGPT Layer patches your local ChatGPT desktop app so it loads a small runtime on
 startup.
 
 That runtime lives in your user data directory, not inside Codex. It finds
@@ -23,14 +26,14 @@ stay outside the app bundle, so you can edit tweaks without rebuilding Codex.
 When Codex updates, the patch is usually removed. Codex++ installs a watcher
 that notices this and re-applies the patch.
 
-1.0.0 adds cleaner patching, better debug output, Owl runtime detection,
+1.1.0 prefers ChatGPT.exe on Windows Store installs and rebrands the loader to ChatGPT Layer while keeping Codex++ data paths. 1.0.0 added cleaner patching, better debug output, Owl runtime detection,
 browser-host debugging, and native bridge support for AppKit, Metal, helper
 processes, and tweak-owned native modules.
 
 ## Table Of Contents
 
 - [Install](#install)
-- [What Codex++ Is](#what-codex-is)
+- [What ChatGPT Layer Is](#what-chatgpt-layer-is)
 - [How It Works](#how-it-works)
 - [Common Commands](#common-commands)
 - [Where Files Live](#where-files-live)
@@ -46,42 +49,47 @@ processes, and tweak-owned native modules.
 Agentic install, from Codex:
 
 ```text
-Inspect and install this for me: https://github.com/b-nnett/codex-plusplus
+Inspect and install this for me: https://github.com/LightHaru/chatgpt-layer
 Tell me where you install it and send me the local path for adding new tweaks.
 ```
 
-Homebrew:
+From a source checkout:
 
 ```sh
-brew install b-nnett/codex-plusplus/codexplusplus
-codexplusplus install
+chatgpt-layer install
 ```
+
+Aliases: `cgl`, `codexplusplus`.
 
 GitHub source installer:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/b-nnett/codex-plusplus/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/install.sh | bash
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/b-nnett/codex-plusplus/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/install.ps1 | iex
 ```
 
 Bun:
 
 ```sh
-bun install -g github:b-nnett/codex-plusplus
+bun install -g github:LightHaru/chatgpt-layer
 codexplusplus install
 ```
 
-After install, launch Codex normally. Open Settings and look for the Codex++
-section.
+After install, launch ChatGPT from the ChatGPT Layer shortcut (not the Store icon).
+Open Settings and look for the ChatGPT Layer section.
 
-## What Codex++ Is
+On Windows, launchers target ChatGPT.exe. Codex.exe in the same folder is a stub
+that exits immediately. Data still lives under %APPDATA%/codex-plusplus/ so existing
+tweaks keep working.
 
-Codex++ is a tweak loader for Codex Desktop.
+## What ChatGPT Layer Is
+
+ChatGPT Layer is a tweak loader for the ChatGPT desktop app. It keeps the Codex++ tweak APIs and the existing %APPDATA%/codex-plusplus data paths.
 
 It gives you:
 
@@ -122,7 +130,7 @@ Runtime flow:
 
 | Command | What it does |
 |---|---|
-| `codexplusplus install` | Patch Codex and install the runtime. |
+| `chatgpt-layer install` (`cgl`, `codexplusplus`) | Patch ChatGPT and install the runtime. |
 | `codexplusplus status` | Show installed version and patch state. |
 | `codexplusplus debug` | Show app path, runtime type, paths, open state, and bridge status. |
 | `codexplusplus repair` | Re-apply the patch after an app update or broken install. |
@@ -174,9 +182,10 @@ Default user data paths:
 | Windows | `%APPDATA%/codex-plusplus/` |
 | Linux | `$XDG_DATA_HOME/codex-plusplus/` or `~/.local/share/codex-plusplus/` |
 
-On Windows Store installs, Codex++ also creates a writable managed app copy
-under `%LOCALAPPDATA%/codex-plusplus/store-apps/`. Use the Codex++ shortcut for
-that copy.
+On Windows Store installs, ChatGPT Layer also creates a writable managed app copy
+under `%LOCALAPPDATA%/codex-plusplus/store-apps/` (same folder as Codex++).
+Use the ChatGPT Layer shortcut. It points at ChatGPT.exe, not the Codex.exe stub.
+A Codex++.lnk shortcut is still created for compatibility.
 
 ## Writing Tweaks
 

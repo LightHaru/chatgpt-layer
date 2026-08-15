@@ -1,10 +1,28 @@
 # Changelog
 
-All notable changes to codex-plusplus are documented here.
+All notable changes to ChatGPT Layer (fork of Codex++) are documented here.
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
 
+## 1.1.0
+
+Release notes: [docs/releases/1.1.0.md](docs/releases/1.1.0.md)
+
+### Changed
+
+- Rebranded the user-facing loader to ChatGPT Layer. CLI aliases are `chatgpt-layer`, `cgl`, and the original `codexplusplus`.
+- Kept `%APPDATA%/codex-plusplus` (and macOS/Linux equivalents) and the `tweaks/` folder so existing installs and Codex Accounts keep working.
+- Windows launchers and shortcuts now prefer `ChatGPT.exe`. `Codex.exe` remains a fallback for older layouts.
+- Windows Store discovery matches the `OpenAI.Codex` package family (publisher `2p2nqsd0c76g0`) instead of a frozen versioned folder.
+- macOS discovery also looks for `ChatGPT.app` with bundle id `com.openai.codex`.
+- Default self-update / install source is `LightHaru/chatgpt-layer`.
+
+### Fixed
+
+- Store installs no longer generate shortcuts to the stub `Codex.exe` helper that exits immediately.
+
 ## 0.1.7
+
 
 Release notes: [docs/releases/0.1.7.md](docs/releases/0.1.7.md)
 

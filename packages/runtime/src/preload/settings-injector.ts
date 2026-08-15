@@ -446,7 +446,7 @@ function tryInject(): void {
 
   const updateButton = sidebarUpdatePillButton();
   state.codexPlusPlusUpdateButton = updateButton;
-  group.appendChild(sidebarGroupHeader("Codex++", "pt-3", updateButton));
+  group.appendChild(sidebarGroupHeader("ChatGPT Layer", "pt-3", updateButton));
   refreshSidebarCodexPlusPlusUpdateButton();
 
   // ── Sidebar items ────────────────────────────────────────────────────
@@ -1017,7 +1017,7 @@ function rerender(): void {
 
   const title =
     ap.kind === "tweaks" ? "Tweaks" :
-    ap.kind === "store" ? "Tweak Store" : "Codex++";
+    ap.kind === "store" ? "Tweak Store" : "ChatGPT Layer";
   const subtitle =
     ap.kind === "tweaks"
       ? "Manage your installed Codex++ tweaks."
@@ -1571,7 +1571,7 @@ function reportBugRow(): HTMLElement {
       );
       void ipcRenderer.invoke(
         "codexpp:open-external",
-        `https://github.com/b-nnett/codex-plusplus/issues/new?title=${title}&body=${body}`,
+        `https://github.com/LightHaru/chatgpt-layer/issues/new?title=${title}&body=${body}`,
       );
     }),
   );

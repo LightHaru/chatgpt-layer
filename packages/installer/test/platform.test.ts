@@ -9,6 +9,8 @@ test("inferCodexChannel detects stable and beta metadata", () => {
   assert.equal(inferCodexChannel("com.openai.codex", "Codex"), "stable");
   assert.equal(inferCodexChannel("com.openai.codex.beta", "Codex (Beta)"), "beta");
   assert.equal(inferCodexChannel(null, "Codex (Beta)"), "beta");
+  assert.equal(inferCodexChannel(null, "ChatGPT"), "stable");
+  assert.equal(inferCodexChannel("com.openai.codex", "ChatGPT"), "stable");
 });
 
 test("locateCodex reads beta bundle metadata from override path on macOS", { skip: process.platform !== "darwin" }, () => {
@@ -37,6 +39,25 @@ test("locateCodex reads beta bundle metadata from override path on macOS", { ski
     assert.equal(codex.bundleId, "com.openai.codex.beta");
     assert.equal(codex.channel, "beta");
     assert.equal(codex.executable.endsWith("Contents/MacOS/Codex (Beta)"), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("locateCodex prefers the Store desktop executable over the Codex helper on Windows", { skip: process.platform !== "win32" }, () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-platform-"));
+  try {
+    const app = join(root, "OpenAI.Codex", "app");
+    mkdirSync(join(app, "resources"), { recursive: true });
+    writeFileSync(join(app, "resources", "app.asar"), "");
+    writeFileSync(join(app, "ChatGPT.exe"), "desktop");
+    writeFileSync(join(app, "Codex.exe"), "helper");
+
+    const codex = locateCodex(app);
+    assert.equal(codex.executable, join(app, "ChatGPT.exe"));
+    assert.equal(codex.electronBinary, join(app, "ChatGPT.exe"));
+    assert.equal(codex.appName, "ChatGPT");
+    assert.equal(codex.channel, "stable");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

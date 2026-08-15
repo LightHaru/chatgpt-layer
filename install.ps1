@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$Repo = if ($env:CODEX_PLUSPLUS_REPO) { $env:CODEX_PLUSPLUS_REPO } else { "b-nnett/codex-plusplus" }
+$Repo = if ($env:CHATGPT_LAYER_REPO) { $env:CHATGPT_LAYER_REPO } elseif ($env:CODEX_PLUSPLUS_REPO) { $env:CODEX_PLUSPLUS_REPO } else { "LightHaru/chatgpt-layer" }
 $Ref = if ($env:CODEX_PLUSPLUS_REF) { $env:CODEX_PLUSPLUS_REF } else { "main" }
 $InstallDir = if ($env:CODEX_PLUSPLUS_SOURCE_DIR) { $env:CODEX_PLUSPLUS_SOURCE_DIR } else { Join-Path $HOME ".codex-plusplus\source" }
 
@@ -35,7 +35,7 @@ try {
   New-Item -ItemType Directory -Force -Path $Work, $Extract | Out-Null
 
   $Url = "https://codeload.github.com/$Repo/zip/$Ref"
-  Write-Host "Downloading codex-plusplus from https://github.com/$Repo ($Ref)..."
+  Write-Host "Downloading ChatGPT Layer from https://github.com/$Repo ($Ref)..."
   try {
     Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing
   } catch {
@@ -76,7 +76,7 @@ try {
     Pop-Location
   }
 
-  Write-Host "Building codex-plusplus..."
+  Write-Host "Building ChatGPT Layer..."
   Push-Location $Next
   try {
     & npm.cmd run build
