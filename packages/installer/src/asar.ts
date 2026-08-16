@@ -115,7 +115,23 @@ function inspectPackedAsar(bytes: Buffer): PackedAsarInspection {
  * when that promise resolves. Yield to the event loop until the packed bytes
  * parse, then fail closed. This is not a createPackage retry and not a sleep.
  */
-async function waitForReadablePackedAsar(path: string, label: string): Promise<void> {
+/**
+ * Terminal inspect reasons for a fully written archive that is simply not a
+ * valid root package.json. Truncation / missing / pickle errors keep retrying.
+ */
+const SETTLED_PACK_FAILURES = new Set([
+  "no-package.json",
+  "bad-json",
+  "empty-payload",
+  "nul-payload",
+  "leading-nul",
+]);
+
+/**
+ * Yield until createPackage's stream has actually landed on disk. `ok` or a
+ * content-level failure both count as settled. Truncated headers keep waiting.
+ */
+export async function waitForPackedAsarSettled(path: string, label = path): Promise<void> {
   const attempts = 40;
   let reason = "missing";
   let size = 0;
@@ -126,10 +142,20 @@ async function waitForReadablePackedAsar(path: string, label: string): Promise<v
     size = bytes.length;
     const info = inspectPackedAsar(bytes);
     reason = info.reason;
-    if (info.ok) return;
+    if (info.ok || SETTLED_PACK_FAILURES.has(info.reason)) return;
     if (attempt < attempts) await yieldToEventLoop();
   }
-  throw new Error(`${label} asar is unreadable (${reason}, size=${size})`);
+  throw new Error(`${label} asar did not settle (${reason}, size=${size})`);
+}
+
+export async function waitForReadablePackedAsar(path: string, label: string): Promise<void> {
+  await waitForPackedAsarSettled(path, label);
+  let bytes = Buffer.alloc(0);
+  try { bytes = readFileSync(path); } catch { /* missing */ }
+  const info = inspectPackedAsar(bytes);
+  if (!info.ok) {
+    throw new Error(`${label} asar is unreadable (${info.reason}, size=${bytes.length})`);
+  }
 }
 
 function packedFileEntry(node: unknown): { size: number; offset: number } | null {

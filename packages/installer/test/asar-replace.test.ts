@@ -24,6 +24,8 @@ import {
   readFileInAsar,
   replaceAsarAtomically,
   uncacheAsar,
+  waitForPackedAsarSettled,
+  waitForReadablePackedAsar,
   type AsarReplaceFs,
 } from "../src/asar";
 
@@ -38,6 +40,7 @@ async function packFixture(dir: string, pkg: Record<string, unknown>, extra: Rec
   }
   await asar.createPackageWithOptions(src, archive, { globOptions: { dot: true } });
   asar.uncache(archive);
+  await waitForReadablePackedAsar(archive, "fixture");
   return archive;
 }
 
@@ -59,6 +62,7 @@ async function packNestedAsar(
   writeFileSync(join(nestedDir, "package.json"), NESTED_PKG);
   await asar.createPackageWithOptions(src, archive, { globOptions: { dot: true } });
   asar.uncache(archive);
+  await waitForPackedAsarSettled(archive, "nested-fixture");
   return archive;
 }
 
@@ -122,6 +126,7 @@ test("asarHasReadablePackageJson rejects empty, zeroed, and invalid archives", a
     const badJson = join(root, "bad-json.asar");
     await asar.createPackageWithOptions(src, badJson, { globOptions: { dot: true } });
     asar.uncache(badJson);
+    await waitForPackedAsarSettled(badJson, "bad-json");
     assert.equal(asarHasReadablePackageJson(badJson), false);
   } finally {
     await cleanupTempTree(root);
@@ -281,6 +286,7 @@ test("replacement success requires a readable package.json", async () => {
     const staging = join(root, "stage.asar");
     await asar.createPackageWithOptions(stagingSrc, staging, { globOptions: { dot: true } });
     asar.uncache(staging);
+    await waitForPackedAsarSettled(staging, "empty-root-staging");
     await assert.rejects(
       () => replaceAsarAtomically(staging, dest, { platform: "win32" }),
       /replaced asar is unreadable/,
