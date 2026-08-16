@@ -107,6 +107,7 @@ import {
   resolveTrustedCodexExecutable,
   setCodexSessionManager,
 } from "./codex-sessions";
+import { createCodexAppServerHost, setCodexAppServerHost } from "./codex-app-server/host";
 import type {
   CodexViewCreateOptions,
   NativeHelperLaunchOptions,
@@ -260,6 +261,16 @@ const sessionManager = new CodexSessionManager({
 });
 setCodexSessionManager(sessionManager);
 
+// MS-2A: dormant app-server host. Production launcher is fail-closed (invocation
+// not proven). No public mutation IPC. Sessions stay STOPPED until main code
+// starts them; this host never auto-starts children or intercepts Desktop.
+const appServerHost = createCodexAppServerHost({
+  userRoot,
+  sessionManager,
+  log,
+});
+setCodexAppServerHost(appServerHost);
+
 // 2. Initial tweak discovery + main-scope load.
 loadAllMainTweaks();
 
@@ -281,10 +292,14 @@ app.on("will-quit", (event) => {
   const failSafe = setTimeout(() => {
     app.quit();
   }, 3000);
-  void sessionManager.shutdownAll({ timeoutMs: 3000 }).finally(() => {
-    clearTimeout(failSafe);
-    app.quit();
-  });
+  void appServerHost
+    .closeAll()
+    .catch(() => {})
+    .then(() => sessionManager.shutdownAll({ timeoutMs: 3000 }))
+    .finally(() => {
+      clearTimeout(failSafe);
+      app.quit();
+    });
 });
 
 function privilegedHandle(channel: string, listener: (...args: any[]) => unknown): void {

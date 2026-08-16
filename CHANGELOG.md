@@ -6,6 +6,10 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ## Unreleased
 
+### Added
+
+- MS-2A Layer-internal Codex app-server transport, request correlation, thread-owner store, and simple sticky-thread routing core. Production child invocation stays fail-closed until proven. No public mutation IPC, no Smart Routing, no Desktop interception.
+
 ### Changed
 
 - README install docs lead with `npm install -g chatgpt-layer`; GitHub one-liners are the alternative.

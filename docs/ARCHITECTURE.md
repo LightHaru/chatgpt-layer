@@ -41,7 +41,8 @@
 
 `<user-data-dir>/codex-sessions/` is Layer-owned isolated child-process storage.
 It is empty by default; MS-1 does not auto-start sessions or change ChatGPT's
-single-session behavior. See [Multi-session foundation (MS-1)](./CODEX-MULTI-SESSION.md).
+single-session behavior. See [Multi-session foundation (MS-1)](./CODEX-MULTI-SESSION.md) and
+[Codex app-server transport (MS-2A)](./CODEX-APP-SERVER.md).
 
 ## Tweak update checks
 
