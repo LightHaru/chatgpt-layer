@@ -39,7 +39,8 @@ test("buildManagedMcpBlock creates TOML entries and resolves local server script
     assert.equal(built.skippedServerNames.length, 0);
     assert.match(built.block, /\[mcp_servers\.native-widgets\]/);
     assert.match(built.block, /command = "node"/);
-    assert.match(built.block, new RegExp(`args = \\["${escapeRegExp(join(tweakDir, "mcp-server.js"))}"\\]`));
+    const serverScript = join(tweakDir, "mcp-server.js");
+    assert.match(built.block, new RegExp(`args = \\[${escapeRegExp(JSON.stringify(serverScript))}\\]`));
     assert.match(built.block, /env = \{ WIDGETS = "1" \}/);
   });
 });
@@ -137,7 +138,7 @@ function withTempDir(fn: (root: string) => void): void {
   try {
     fn(root);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   }
 }
 

@@ -33,7 +33,7 @@ test("detectRuntime reports owl when the Codex framework is present", () => {
     assert.equal(runtime.type, "owl");
     assert.ok(runtime.evidence.some((item) => item.includes("Codex Framework.framework")));
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 
@@ -51,7 +51,7 @@ test("detectRuntime reports electron for an asar Electron app", () => {
     assert.equal(runtime.type, "electron");
     assert.ok(runtime.evidence.some((item) => item.includes("Electron Framework.framework")));
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 
@@ -92,7 +92,7 @@ test("codexPlusPlusPaths reports paths without creating them", () => {
     assert.equal(reported.some((item: DataPath) => item.exists), false);
     assert.equal(reported.find((item) => item.label === "Root")?.path, home);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 
@@ -153,7 +153,7 @@ test("collectOwlBridgeReport reports install-time Owl bridge capabilities while 
   } finally {
     if (previousPort === undefined) delete process.env.CODEXPP_REMOTE_DEBUG_PORT;
     else process.env.CODEXPP_REMOTE_DEBUG_PORT = previousPort;
-    rmSync(root, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   }
 });
 

@@ -88,7 +88,7 @@ export async function cleanupTempTree(path: string): Promise<void> {
   for (const waitMs of [0, ...retryDelaysMs]) {
     if (waitMs > 0) await delay(waitMs);
     try {
-      rmSync(path, { recursive: true, force: true });
+      rmSync(path, { recursive: true, force: true, maxRetries: 5 });
       return;
     } catch (e) {
       if (!isTransientCleanupError(e)) return;
