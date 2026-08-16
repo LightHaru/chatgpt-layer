@@ -16,7 +16,7 @@ import { homedir, platform, tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { userPaths, type UserPaths } from "../../src/paths";
-import { readFileInAsar, readHeaderHash } from "../../src/asar";
+import { cleanupTempTree, readFileInAsar, readHeaderHash, uncacheAsar } from "../../src/asar";
 import { hasCodexPlusPlusAsarMarker } from "../../src/commands/install";
 import { CODEX_WINDOW_SERVICES_KEY } from "../../src/codex-window-services";
 
@@ -93,7 +93,7 @@ export interface InstallerHarness {
     quiet: true;
   };
   env: NodeJS.ProcessEnv;
-  restore(): void;
+  restore(): Promise<void>;
 }
 
 export const SAFE_INSTALL_OPTS = {
@@ -159,9 +159,9 @@ export async function writeSyntheticAsar(
     }
     mkdirSync(dirname(dest), { recursive: true });
     await asar.createPackageWithOptions(work, dest, { globOptions: { dot: true } });
-    asar.uncache(dest);
+    uncacheAsar(dest);
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    await cleanupTempTree(work);
   }
 }
 
@@ -338,9 +338,11 @@ export async function createInstallerHarness(): Promise<InstallerHarness> {
     paths,
     installOpts: { app: app.appRoot, ...SAFE_INSTALL_OPTS },
     env,
-    restore() {
+    async restore() {
       restoreEnv();
-      rmSync(testRoot, { recursive: true, force: true });
+      try { uncacheAsar(app.asarPath); } catch { /* already gone */ }
+      try { (asar as { uncacheAll?: () => void }).uncacheAll?.(); } catch { /* optional */ }
+      await cleanupTempTree(testRoot);
     },
   };
 }
@@ -355,7 +357,7 @@ export async function withIsolatedInstaller<T>(
       assertPathSafety(h);
       return result;
     } finally {
-      h.restore();
+      await h.restore();
     }
   });
 }
@@ -477,9 +479,9 @@ export async function stripLoaderFromAsarAsync(h: InstallerHarness): Promise<voi
     delete pkg.__codexpp;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
     await asar.createPackageWithOptions(work, h.app.asarPath, { globOptions: { dot: true } });
-    asar.uncache(h.app.asarPath);
+    uncacheAsar(h.app.asarPath);
   } finally {
-    rmSync(work, { recursive: true, force: true });
+    await cleanupTempTree(work);
   }
 }
 

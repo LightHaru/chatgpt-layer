@@ -122,18 +122,18 @@ export async function cleanupTempTree(path: string): Promise<void> {
   // Node's fs.rmSync maxRetries only retries unlink EPERM/EBUSY, not the
   // ENOTEMPTY that Windows rimraf throws from rmdirSync. Retry the whole
   // recursive remove ourselves, and clear read-only bits first on Windows.
-  const attempts = 10;
-  const delayMs = 75;
+  const attempts = 20;
+  const delayMs = 100;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       if (process.platform === "win32") chmodTreeWritable(path);
-      rmSync(path, { recursive: true, force: true });
+      rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       return;
     } catch (e) {
       lastError = e;
-      if (!isTransientCleanupError(e)) return;
-      if (attempt < attempts) await delay(delayMs);
+      if (!isTransientCleanupError(e) || attempt === attempts) throw e;
+      await delay(delayMs);
     }
   }
   if (lastError) throw lastError;
