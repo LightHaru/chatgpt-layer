@@ -23,7 +23,16 @@ import { chownForTargetUser, targetUserHome, targetUserOwnership } from "./owner
 
 export type WatcherKind = "launchd" | "login-item" | "scheduled-task" | "systemd" | "none";
 
+/**
+ * Internal/test-only. When set to "1", skip launchd/systemd/schtasks
+ * registration so tests never mutate host services. Do not set in production.
+ */
+export function isWatcherDisabled(): boolean {
+  return process.env.CODEX_PLUSPLUS_DISABLE_WATCHER === "1";
+}
+
 export function installWatcher(appRoot: string): WatcherKind {
+  if (isWatcherDisabled()) return "none";
   switch (platform()) {
     case "darwin":
       return installLaunchd(appRoot);
@@ -37,6 +46,7 @@ export function installWatcher(appRoot: string): WatcherKind {
 }
 
 export function uninstallWatcher(): void {
+  if (isWatcherDisabled()) return;
   switch (platform()) {
     case "darwin":
       return uninstallLaunchd();

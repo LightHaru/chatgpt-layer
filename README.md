@@ -226,6 +226,7 @@ APIs are still `api.codex.*`. Full guide: [Writing Tweaks](docs/WRITING-TWEAKS.m
 - [Writing Tweaks](docs/WRITING-TWEAKS.md)
 - [Tweak API](docs/tweaks/api-reference.md)
 - [npm releases](docs/NPM-RELEASE.md)
+- [Installer testing](docs/INSTALLER-TESTING.md)
 
 ## Acknowledgments <img alt="" src="https://img.shields.io/badge/based%20on%20Codex++-111827?style=flat-square">
 
@@ -448,6 +449,7 @@ API vẫn `api.codex.*`. Hướng dẫn đầy đủ: [Writing Tweaks](docs/WRIT
 - [Writing Tweaks](docs/WRITING-TWEAKS.md)
 - [Tweak API](docs/tweaks/api-reference.md)
 - [Phát hành npm](docs/NPM-RELEASE.md)
+- [Kiểm thử installer](docs/INSTALLER-TESTING.md)
 
 ## Cảm ơn <img alt="" src="https://img.shields.io/badge/based%20on%20Codex++-111827?style=flat-square">
 

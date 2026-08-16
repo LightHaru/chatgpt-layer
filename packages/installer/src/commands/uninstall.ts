@@ -9,7 +9,7 @@ import { prepareCodeSigning, signCodexApp } from "../codesign.js";
 import { uninstallWatcher } from "../watcher.js";
 import { chownForTargetUser } from "../ownership.js";
 import { cleanupWindowsManagedArtifacts } from "../windows-cleanup.js";
-import { readHeaderHash } from "../asar.js";
+import { readHeaderHash, uncacheAsar } from "../asar.js";
 import { hasCodexPlusPlusAsarMarker, readCodexVersion } from "./install.js";
 import { isCodexRunning } from "../alerts.js";
 import type { CodexInstall } from "../platform.js";
@@ -122,7 +122,12 @@ export function chooseRestorePlan(input: {
 
   if (!existsSync(input.partialAsarBackup)) {
     throw new Error(
-      `No backup found at ${input.partialAsarBackup}. Cannot safely uninstall a patched Codex.app.`,
+      `No original app.asar backup found at ${input.partialAsarBackup}. Cannot safely uninstall a patched Codex.app because the original package is unknown.`,
+    );
+  }
+  if (hasCodexPlusPlusAsarMarker(input.partialAsarBackup)) {
+    throw new Error(
+      `Backup at ${input.partialAsarBackup} is itself a ChatGPT Layer patch. Refusing to restore it as the original app.`,
     );
   }
 
@@ -157,6 +162,7 @@ function restoreFullAppBundle(appRoot: string, backupPath: string): void {
     if (existsSync(appRoot)) renameSync(appRoot, replaced);
     renameSync(staged, appRoot);
     rmSync(replaced, { recursive: true, force: true });
+    uncacheAsar(join(appRoot, "Contents", "Resources", "app.asar"));
   } catch (error) {
     try {
       rmSync(appRoot, { recursive: true, force: true });
@@ -198,6 +204,7 @@ function restorePartialBackup(
   }
 
   cpSync(opts.backupAsar, codex.asarPath);
+  uncacheAsar(codex.asarPath);
   if (existsSync(opts.backupAsarUnpacked)) {
     rmSync(`${codex.asarPath}.unpacked`, { recursive: true, force: true });
     cpSync(opts.backupAsarUnpacked, `${codex.asarPath}.unpacked`, { recursive: true });

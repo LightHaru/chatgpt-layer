@@ -23,6 +23,12 @@ export function installCliShims(shimDir: string): CliShimResult {
     return { shimDir, pathDir: null, commands: COMMANDS, managedBy: "homebrew" };
   }
 
+  // Internal/test-only: keep shims inside the user-data bin dir and do not
+  // symlink into real PATH locations (~/.local/bin, WindowsApps, ...).
+  if (process.env.CODEX_PLUSPLUS_DISABLE_PATH_SHIMS === "1") {
+    return { shimDir, pathDir: null, commands: COMMANDS };
+  }
+
   const pathDir = installIntoPath(shimDir);
   return { shimDir, pathDir, commands: COMMANDS };
 }

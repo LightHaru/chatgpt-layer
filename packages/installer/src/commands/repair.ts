@@ -114,9 +114,12 @@ export async function repair(opts: Opts = {}): Promise<void> {
         }
         return;
       }
-      writeState(paths.stateFile, { ...state, watcher, sourceRoot });
-      if (!opts.quiet) console.log(kleur.green("Patch already intact."));
-      return;
+      if (runtimeLooksIntact(paths.runtime)) {
+        writeState(paths.stateFile, { ...state, watcher, sourceRoot });
+        if (!opts.quiet) console.log(kleur.green("Patch already intact."));
+        return;
+      }
+      // Hash still matches but runtime assets are gone; fall through to install().
     }
   }
 
@@ -189,6 +192,10 @@ function notifyUpdateModePaused(updateModeFile: string, fallbackAppRoot: string)
     ...updateMode,
     notifiedAt: new Date().toISOString(),
   });
+}
+
+function runtimeLooksIntact(runtimeDir: string): boolean {
+  return existsSync(join(runtimeDir, "main.js"));
 }
 
 function isAutoUpdateEnabled(configFile: string): boolean {

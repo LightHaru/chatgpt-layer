@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.1.4",
   "license": "MIT",
-  "description": "ChatGPT Layer — local tweaks for the ChatGPT desktop app. Based on Codex++.",
+  "description": "ChatGPT Layer \u2014 local tweaks for the ChatGPT desktop app. Based on Codex++.",
   "type": "module",
   "repository": {
     "type": "git",
@@ -19,7 +19,7 @@
   "scripts": {
     "build": "npm run build --workspace @codex-plusplus/sdk && npm run build --workspace @codex-plusplus/native-host && npm run build --workspace @codex-plusplus/runtime && npm run build --workspace @codex-plusplus/loader && npm run build --workspace chatgpt-layer",
     "clean": "node scripts/clean.mjs",
-    "test": "npm run build --workspace @codex-plusplus/sdk && npm run build --workspace @codex-plusplus/native-host && node scripts/run-tests.mjs",
+    "test": "npm run build --workspace @codex-plusplus/sdk && npm run build --workspace @codex-plusplus/native-host && npm run build --workspace chatgpt-layer && node scripts/run-tests.mjs",
     "audit": "npm audit --workspaces --include-workspace-root",
     "prepare": "npm run build"
   },

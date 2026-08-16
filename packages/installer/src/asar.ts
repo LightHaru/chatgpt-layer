@@ -48,12 +48,19 @@ export async function patchAsar(
   const extractDir = join(work, "src");
   const outAsar = join(work, "app.asar");
 
-  // Snapshot what was unpacked in the ORIGINAL asar before we touch anything;
-  // we'll feed an equivalent compact set back to createPackageWithOptions.
-  const originalUnpackOptions = collectUnpackOptions(asarPath);
+  // Never extractAll/getRawHeader the live dest: @electron/asar can keep that
+  // path mapped, and Windows then refuses to rename over it (EPERM) for the
+  // rest of the process. Read dest as bytes into a snapshot inode instead.
+  const snapshot = join(work, "src.asar");
+  asar.uncache(asarPath);
 
   try {
-    asar.extractAll(asarPath, extractDir);
+    writeFileSync(snapshot, readFileSync(asarPath));
+    asar.uncache(asarPath);
+    const originalUnpackOptions = collectUnpackOptions(snapshot);
+    asar.uncache(snapshot);
+    asar.extractAll(snapshot, extractDir);
+    asar.uncache(snapshot);
     await mutate(extractDir);
 
     await asar.createPackageWithOptions(extractDir, outAsar, {
@@ -72,11 +79,15 @@ export async function patchAsar(
       throw annotatePermError(e, asarPath);
     }
     try {
-      renameSync(stagingPath, asarPath);
+      await replaceAsarAtomically(stagingPath, asarPath);
     } catch (e) {
       try { unlinkSync(stagingPath); } catch { /* best effort */ }
       throw annotatePermError(e, asarPath);
     }
+    // @electron/asar caches Filesystem objects by path. Replacing app.asar
+    // in place must drop that cache or later extractFile/extractAll reads
+    // the old header against the new bytes.
+    asar.uncache(asarPath);
     return readHeaderHash(asarPath);
   } finally {
     try {
@@ -87,22 +98,56 @@ export async function patchAsar(
   }
 }
 
+
+async function replaceAsarAtomically(stagingPath: string, asarPath: string): Promise<void> {
+  const win = process.platform === "win32";
+  const attempts = win ? 40 : 8;
+  const delayMs = win ? 150 : 50;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    asar.uncache(asarPath);
+    asar.uncache(stagingPath);
+    try {
+      if (win) {
+        try { chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
+        try { unlinkSync(asarPath); } catch { /* dest still locked */ }
+      }
+      renameSync(stagingPath, asarPath);
+      asar.uncache(asarPath);
+      return;
+    } catch (e) {
+      lastError = e;
+      if (!isTransientCleanupError(e) || attempt === attempts) throw e;
+      if (win) {
+        try {
+          cpSync(stagingPath, asarPath);
+          try { unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
+          asar.uncache(asarPath);
+          return;
+        } catch { /* dest still locked; retry */ }
+      }
+      await delay(delayMs);
+    }
+  }
+  if (lastError) throw lastError;
+}
+
 export async function cleanupTempTree(path: string): Promise<void> {
   // Node's fs.rmSync maxRetries only retries unlink EPERM/EBUSY, not the
   // ENOTEMPTY that Windows rimraf throws from rmdirSync. Retry the whole
   // recursive remove ourselves, and clear read-only bits first on Windows.
-  const attempts = 10;
-  const delayMs = 75;
+  const attempts = 20;
+  const delayMs = 100;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       if (process.platform === "win32") chmodTreeWritable(path);
-      rmSync(path, { recursive: true, force: true });
+      rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       return;
     } catch (e) {
       lastError = e;
-      if (!isTransientCleanupError(e)) return;
-      if (attempt < attempts) await delay(delayMs);
+      if (!isTransientCleanupError(e) || attempt === attempts) throw e;
+      await delay(delayMs);
     }
   }
   if (lastError) throw lastError;
@@ -232,4 +277,10 @@ function annotatePermError(e: unknown, target: string): Error {
     return wrapped;
   }
   return err instanceof Error ? err : new Error(String(err));
+}
+
+export function uncacheAsar(asarPath: string): void {
+  asar.uncache(asarPath);
+  const uncacheAll = (asar as { uncacheAll?: () => void }).uncacheAll;
+  if (typeof uncacheAll === "function") uncacheAll();
 }
