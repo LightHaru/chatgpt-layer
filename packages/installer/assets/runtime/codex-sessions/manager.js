@@ -26,6 +26,7 @@ class CodexSessionManager {
         this.loadFromDisk();
     }
     listSessions() {
+        (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         return [...this.records.values()]
             .map((record) => cloneMetadata(record.metadata))
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -42,6 +43,7 @@ class CodexSessionManager {
         };
     }
     createSession(input = {}) {
+        (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         const id = input.id === undefined ? this.allocateId() : ((0, ids_1.assertSessionId)(input.id), input.id);
         if (this.records.has(id) || (0, node_fs_1.existsSync)((0, paths_1.sessionDir)(this.userRoot, id))) {
             throw new Error("session already exists");
@@ -53,8 +55,8 @@ class CodexSessionManager {
             enabled: true,
             createdAt,
         };
+        (0, paths_1.ensureSafeSessionLayout)(this.userRoot);
         const dir = (0, paths_1.sessionDir)(this.userRoot, id);
-        (0, node_fs_1.mkdirSync)((0, paths_1.accountsRoot)(this.userRoot), { recursive: true });
         try {
             (0, node_fs_1.mkdirSync)(dir);
         }
@@ -91,6 +93,7 @@ class CodexSessionManager {
         return this.setEnabled(id, false);
     }
     async removeSession(id, options = {}) {
+        (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         const record = this.require(id);
         if (record.lifecycle === "STARTING" || record.lifecycle === "RUNNING" || record.lifecycle === "STOPPING") {
             if (!options.forceStop) {
@@ -281,24 +284,28 @@ class CodexSessionManager {
     }
     require(id) {
         (0, ids_1.assertSessionId)(id);
+        (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         const record = this.records.get(id);
         if (!record)
             throw new Error(`unknown session: ${id}`);
         return record;
     }
     allocateId() {
+        const layout = (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         for (let i = 0; i < 8; i++) {
             const id = (0, ids_1.generateSessionId)();
-            if (!this.records.has(id) && !(0, node_fs_1.existsSync)((0, node_path_1.join)((0, paths_1.accountsRoot)(this.userRoot), id)))
+            if (!this.records.has(id) && !(0, node_fs_1.existsSync)((0, node_path_1.join)(layout.realAccountsRoot, id)))
                 return id;
         }
         throw new Error("failed to allocate session id");
     }
     persist(record) {
+        (0, paths_1.assertSafeSessionLayout)(this.userRoot);
         writeJsonAtomic((0, paths_1.sessionMetaPath)(this.userRoot, record.metadata.id), record.metadata);
     }
     loadFromDisk() {
-        const root = (0, paths_1.accountsRoot)(this.userRoot);
+        const layout = (0, paths_1.assertSafeSessionLayout)(this.userRoot);
+        const root = layout.realAccountsRoot;
         if (!(0, node_fs_1.existsSync)(root))
             return;
         let entries = [];
@@ -311,10 +318,10 @@ class CodexSessionManager {
         for (const name of entries) {
             if (!(0, ids_1.isSessionId)(name))
                 continue;
-            const metaPath = (0, paths_1.sessionMetaPath)(this.userRoot, name);
-            if (!(0, node_fs_1.existsSync)(metaPath))
-                continue;
             try {
+                const metaPath = (0, paths_1.sessionMetaPath)(this.userRoot, name);
+                if (!(0, node_fs_1.existsSync)(metaPath))
+                    continue;
                 const raw = JSON.parse((0, node_fs_1.readFileSync)(metaPath, "utf8"));
                 const metadata = stripCredentials(raw, name);
                 this.records.set(name, {

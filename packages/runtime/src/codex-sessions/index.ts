@@ -9,7 +9,10 @@ export {
   rmSessionDir,
   collectForbiddenDeleteTargets,
   isForbiddenSessionDeleteTarget,
+  assertSafeSessionLayout,
+  ensureSafeSessionLayout,
 } from "./paths";
+export type { SafeSessionLayout } from "./paths";
 export type { CodexSessionLifecycle, CodexSessionMetadata, CodexSessionStatus } from "./types";
 export { CODEX_SESSION_METADATA_KEYS, CODEX_SESSION_LAST_EXIT_KEYS } from "./types";
 export type {

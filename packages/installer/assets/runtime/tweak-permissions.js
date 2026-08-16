@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TWEAK_CAPABILITY_IPC_CHANNELS = exports.LAYER_ADMIN_IPC_CHANNELS = exports.TWEAK_PERMISSION_ALIASES = void 0;
+exports.EXPLICIT_ONLY_PERMISSIONS = exports.TWEAK_CAPABILITY_IPC_CHANNELS = exports.LAYER_ADMIN_IPC_CHANNELS = exports.TWEAK_PERMISSION_ALIASES = void 0;
 exports.normalizePermission = normalizePermission;
 exports.hasExplicitPermissions = hasExplicitPermissions;
 exports.isLegacyPermissionManifest = isLegacyPermissionManifest;
@@ -75,10 +75,14 @@ function hasExplicitPermissions(manifest) {
 function isLegacyPermissionManifest(manifest) {
     return manifest.permissions === undefined;
 }
+exports.EXPLICIT_ONLY_PERMISSIONS = new Set(["codex-sessions"]);
 function hasTweakPermission(manifest, permission) {
+    const wanted = normalizePermission(permission);
+    if (exports.EXPLICIT_ONLY_PERMISSIONS.has(wanted)) {
+        return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
+    }
     if (!hasExplicitPermissions(manifest))
         return true;
-    const wanted = normalizePermission(permission);
     return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
 }
 function permissionDeniedMessage(tweakId, permission) {

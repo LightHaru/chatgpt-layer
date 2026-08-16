@@ -6,7 +6,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +20,7 @@ import {
   ISOLATED_ENV_ALLOWLIST,
   SESSION_ID_RE,
   assertSessionId,
+  accountsRoot,
   collectForbiddenDeleteTargets,
   createNodeCodexProcessLauncher,
   generateSessionId,
@@ -80,6 +83,25 @@ class FakeLauncher implements CodexProcessLauncher {
     this.children.set(intent.sessionId, child);
     return child;
   }
+}
+
+
+function linkDir(target: string, dest: string): void {
+  const types: Array<"junction" | "dir" | "file"> =
+    process.platform === "win32" ? ["junction", "dir"] : ["dir", "junction"];
+  const errors: string[] = [];
+  for (const type of types) {
+    try {
+      symlinkSync(target, dest, type);
+      return;
+    } catch (error) {
+      errors.push(`${type}: ${(error as Error).message}`);
+    }
+  }
+  assert.fail(
+    `unable to create directory link as junction or dir symlink (${errors.join("; ")}); ` +
+      "this platform cannot create directory links for the containment test",
+  );
 }
 
 function tempRoot(): string {
@@ -594,6 +616,76 @@ test("optional fixture child can be spawned via node for integration", async () 
     assert.equal(started.lifecycle, "RUNNING");
     const stopped = await mgr.stopSession(created.id);
     assert.equal(stopped.lifecycle, "STOPPED");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("createSession refuses a symlinked accounts root and does not write outside", () => {
+  const root = tempRoot();
+  const outside = mkdtempSync(join(tmpdir(), "codexpp-outside-accounts-"));
+  try {
+    const before = readdirSync(outside);
+    const { mgr } = managerFor(root);
+    mkdirSync(sessionsRoot(root), { recursive: true });
+    linkDir(outside, accountsRoot(root));
+    assert.throws(() => mgr.createSession({ label: "escape" }), /symlink/);
+    assert.deepEqual(readdirSync(outside), before);
+    assert.equal(readdirSync(outside).some((name) => name.startsWith("session_")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("removeSession refuses a poisoned accounts link and leaves the outside decoy", async () => {
+  const root = tempRoot();
+  const outside = mkdtempSync(join(tmpdir(), "codexpp-outside-decoy-"));
+  try {
+    const { mgr } = managerFor(root);
+    const created = mgr.createSession({ label: "keep" });
+    const decoy = join(outside, created.id);
+    mkdirSync(decoy);
+    writeFileSync(join(decoy, "keep-me"), "safe");
+    rmSync(accountsRoot(root), { recursive: true, force: true });
+    linkDir(outside, accountsRoot(root));
+    await assert.rejects(mgr.removeSession(created.id), /symlink/);
+    assert.equal(existsSync(join(decoy, "keep-me")), true);
+    assert.deepEqual(readdirSync(decoy).sort(), ["keep-me"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("createSession refuses a symlinked sessions root and does not write outside", () => {
+  const root = tempRoot();
+  const outside = mkdtempSync(join(tmpdir(), "codexpp-outside-sessions-"));
+  try {
+    const before = readdirSync(outside);
+    const { mgr } = managerFor(root);
+    linkDir(outside, sessionsRoot(root));
+    assert.throws(() => mgr.createSession({ label: "escape" }), /symlink/);
+    assert.deepEqual(readdirSync(outside), before);
+    assert.equal(readdirSync(outside).some((name) => name.startsWith("session_")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("normal non-symlink create and remove stay inside userRoot", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr } = managerFor(root);
+    const created = mgr.createSession({ label: "ok" });
+    const dir = sessionDir(root, created.id);
+    assert.equal(dir.startsWith(join(root, "codex-sessions", "accounts")), true);
+    assert.equal(existsSync(dir), true);
+    await mgr.removeSession(created.id);
+    assert.equal(existsSync(dir), false);
+    assert.equal(existsSync(root), true);
+    assert.equal(existsSync(sessionsRoot(root)), true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -3,9 +3,11 @@
  * `TweakManifest.permissions` enforcement.
  *
  * Policy:
- *   1. permissions ABSENT: legacy — preserve existing API behavior
+ *   1. permissions ABSENT: legacy — preserve historical API behavior
  *   2. permissions PRESENT: enforce the declared list strictly
  *   3. permissions: [] is NOT legacy — explicitly no optional capabilities
+ *   4. EXPLICIT_ONLY_PERMISSIONS (`codex-sessions`) are never implied by an
+ *      omitted field. They require the name to appear in the array.
  *
  * Historical aliases (`codex.windows` → `codex-windows`, `codex.views` →
  * `codex-views`) are preserved and treated as equivalent.
@@ -147,12 +149,17 @@ export function isLegacyPermissionManifest(
   return manifest.permissions === undefined;
 }
 
+export const EXPLICIT_ONLY_PERMISSIONS = new Set<CanonicalTweakPermission>(["codex-sessions"]);
+
 export function hasTweakPermission(
   manifest: Pick<TweakManifest, "permissions">,
   permission: TweakPermission | CanonicalTweakPermission,
 ): boolean {
-  if (!hasExplicitPermissions(manifest)) return true;
   const wanted = normalizePermission(permission);
+  if (EXPLICIT_ONLY_PERMISSIONS.has(wanted)) {
+    return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
+  }
+  if (!hasExplicitPermissions(manifest)) return true;
   return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
 }
 

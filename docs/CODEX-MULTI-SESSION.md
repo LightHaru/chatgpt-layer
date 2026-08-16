@@ -106,10 +106,26 @@ not import `runtime-paths.ts`):
     sqlite-home/                    CODEX_SQLITE_HOME for that child
 ```
 
-After `join`, paths are `resolve()`d and must be **strictly** inside
-`accounts/`. Deletion realpath-checks the target, refuses `userRoot`,
-`tweak-data`, `HOME`, `APPDATA`, and `~/.codex`, and never deletes sibling
-sessions.
+Session state must stay below the **real** Layer `userRoot`. `userRoot` itself
+may resolve through a user-selected symlink (`CODEX_PLUSPLUS_HOME`
+compatibility). Structural descendants must not:
+
+- `<userRoot>/codex-sessions`
+- `<userRoot>/codex-sessions/accounts`
+
+If either path exists as a symlink or directory junction, session code **fails
+closed**: it does not follow the link, write through it, remove through it, or
+repair it by deleting the outside target. After `mkdir` of a missing structural
+dir, the path is re-`lstat`ed (TOCTOU). A session directory that is itself a
+symlink is also refused.
+
+Lexical `resolve()` alone is not the containment proof. Existing structural
+dirs are `lstat`ed, then `realpath`ed, and must be strictly inside
+`realpath(userRoot)` (or `resolve(userRoot)` if it does not exist).
+
+Deletion independently re-validates the layout, refuses symlink session dirs
+without following them, refuses `userRoot`, `tweak-data`, `HOME`, `APPDATA`,
+and `~/.codex`, and never deletes sibling sessions.
 
 `createSession` does not create or copy `~/.codex`.
 
@@ -157,11 +173,13 @@ Renderer-safe status never includes pid, `ChildProcess`, stdout, env, or paths.
 
 Permission name: `codex-sessions`.
 
-Policy is unchanged:
+`codex-sessions` is **explicit opt-in**. It is never implied by an omitted
+`permissions` field.
 
-- omitted permissions → legacy all-allowed (including `codex-sessions`)
-- `[]` → none
-- explicit list → only listed capabilities
+- omitted permissions → legacy historical capabilities remain allowed;
+  `codex-sessions` is denied
+- `[]` → none, including `codex-sessions`
+- explicit list → only listed capabilities (`codex-sessions` only if named)
 
 Public API:
 
@@ -207,11 +225,12 @@ On `app.on("will-quit")`, after existing tweak/native/view cleanup:
 
 ## 16. Cross-platform
 
-Path checks use `resolve` + `isPathInside` (rejects absolute/`..` relatives).
-Windows drive letters and UNC ids fail `assertSessionId`. Spawn uses
-`windowsHide: true`. Isolated env copies `PATH`, `HOME`, `USERPROFILE`,
-`SYSTEMROOT`, `WINDIR`, `TEMP`, `TMP`, `LANG`, `LC_ALL` plus `CODEX_HOME` and
-`CODEX_SQLITE_HOME`.
+Path checks `lstat` structural dirs (Node reports Windows junctions as
+symbolic links) and require realpaths to stay strictly inside the real
+`userRoot`. Absolute/`..` relatives are rejected. Windows drive letters and
+UNC ids fail `assertSessionId`. Spawn uses `windowsHide: true`. Isolated env
+copies `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `WINDIR`, `TEMP`, `TMP`,
+`LANG`, `LC_ALL` plus `CODEX_HOME` and `CODEX_SQLITE_HOME`.
 
 Trusted executable search is a conservative relative list under
 `resourcesPath` / `appPath` (and Darwin `Contents/Resources`). Absence is
@@ -223,7 +242,8 @@ Trusted executable search is a conservative relative list under
 - Existing `api.codex` fields remain required.
 - No sessions are created at boot, so ChatGPT single-session behavior is unchanged.
 - `codex-sessions/` is absent until something creates a session.
-- Legacy tweaks that omit `permissions` keep working, including the new API.
+- Legacy tweaks that omit `permissions` keep historical APIs. The new
+  `codex-sessions` API is explicit opt-in and stays denied unless declared.
 
 ## 18. Codex Accounts 2.x migration
 
@@ -234,7 +254,8 @@ not modify LightHaru/codex-plusplus-accounts.
 ## 19. Security
 
 - Opaque ids; never email/path identity.
-- Strict containment under `codex-sessions/accounts/<id>/`.
+- Strict containment under the real `userRoot`; structural session dirs must
+  not be symlinks or directory junctions.
 - Deletion refuse-list: user root, tweak-data, HOME, APPDATA, `~/.codex`.
 - Isolated env allowlist; no caller-supplied env.
 - No tweak-supplied executable.

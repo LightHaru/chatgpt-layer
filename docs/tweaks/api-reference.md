@@ -261,6 +261,7 @@ type TweakPermission =
   | "codex-windows"
   | "codex-views"
   | "codex-cdp"
+  | "codex-sessions"
   | "codex.windows"
   | "codex.views"
   | "native-module"
@@ -268,10 +269,12 @@ type TweakPermission =
   | "native-helper"
 ```
 
-Optional capability authorization. Absent keeps legacy API behavior. When
-present, the list is enforced strictly (`[]` grants none). Aliases
-`codex.windows` / `codex.views` match `codex-windows` / `codex-views`.
-`network` is declarative only. See [Writing tweaks](../WRITING-TWEAKS.md#permissions).
+Optional capability authorization. Absent keeps legacy behavior for historical
+capabilities. New `codex-sessions` is explicit opt-in and is denied when the
+field is omitted. When present, the list is enforced strictly (`[]` grants
+none). Aliases `codex.windows` / `codex.views` match `codex-windows` /
+`codex-views`. `network` is declarative only. See
+[Writing tweaks](../WRITING-TWEAKS.md#permissions).
 
 ## `TweakMcpServer`
 
@@ -521,9 +524,10 @@ currently observes.
 `createWindow()` and `createBrowserView()` are kept for backwards
 compatibility. Prefer the namespaced APIs for new tweaks.
 
-`sessions` is read-only in MS-1 (`list` / `getStatus`). It requires the
-`codex-sessions` permission. Sessions are isolated child processes with
-Layer-owned storage, not extra ChatGPT windows. See
+`sessions` is read-only in MS-1 (`list` / `getStatus`). It requires an
+explicit `codex-sessions` permission even for legacy manifests that omit
+`permissions`. Sessions are isolated child processes with Layer-owned
+storage, not extra ChatGPT windows. See
 [Multi-session foundation](../CODEX-MULTI-SESSION.md).
 
 ## `CodexRuntimeType`
@@ -743,8 +747,9 @@ interface CodexSessionsApi {
 }
 ```
 
-Read-only. The tweak manifest must declare `codex-sessions`. Create / start /
-stop are main-process only and are dormant by default.
+Read-only. The tweak manifest must declare `codex-sessions` (explicit opt-in;
+omitted `permissions` does not grant it). Create / start / stop are
+main-process only and are dormant by default.
 
 ## `NativeModuleKind`
 

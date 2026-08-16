@@ -26,7 +26,7 @@ runtime compatibility.
 | `scope` | `"renderer"`, `"main"`, or `"both"` | Set this explicitly. If omitted, current runtime behavior is effectively `both`. |
 | `main` | `string` | Entry file relative to the tweak directory. |
 | `mcp` | `TweakMcpServer` | Declares an MCP server managed by Codex++. |
-| `permissions` | `TweakPermission[]` | Optional capability list. Absent = legacy (existing APIs keep working). Present = strictly enforced. `[]` grants no optional capabilities. |
+| `permissions` | `TweakPermission[]` | Optional capability list. Absent = legacy (historical APIs keep working; `codex-sessions` is still denied). Present = strictly enforced. `[]` grants no optional capabilities. |
 
 ## Full Example
 
@@ -74,7 +74,8 @@ and the renderer loader skips only `"main"`.
 
 Policy:
 
-1. Field omitted: legacy compatibility. Existing APIs keep working.
+1. Field omitted: legacy compatibility. Historical APIs keep working.
+   New `codex-sessions` is explicit opt-in and stays denied unless listed.
 2. Field present: only the declared list is authorized.
 3. `[]`: explicitly no optional capabilities. This is not legacy.
 
@@ -93,7 +94,7 @@ and `codex.views` are equivalent to `codex-windows` and `codex-views`.
 | `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
 | `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
 | `native-helper` | `launchHelper` / helper calls | Enforced. |
-| `codex-sessions` | `api.codex.sessions.list` / `getStatus` | Enforced. Read-only session metadata. |
+| `codex-sessions` | `api.codex.sessions.list` / `getStatus` | Enforced. Explicit opt-in; omitted `permissions` does not grant it. Read-only session metadata. |
 | `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
 
 Main-process IPC authorizes when a tweak identity is present. Renderer filtering

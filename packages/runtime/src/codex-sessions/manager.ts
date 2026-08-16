@@ -3,7 +3,8 @@ import { basename, dirname, join } from "node:path";
 import { assertSessionId, generateSessionId, isSessionId } from "./ids";
 import type { CodexProcessLauncher, CodexManagedChild } from "./launcher";
 import {
-  accountsRoot,
+  assertSafeSessionLayout,
+  ensureSafeSessionLayout,
   rmSessionDir,
   sessionCodexHome,
   sessionDir,
@@ -61,6 +62,7 @@ export class CodexSessionManager {
   }
 
   listSessions(): CodexSessionMetadata[] {
+    assertSafeSessionLayout(this.userRoot);
     return [...this.records.values()]
       .map((record) => cloneMetadata(record.metadata))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -80,6 +82,7 @@ export class CodexSessionManager {
   }
 
   createSession(input: CreateCodexSessionInput = {}): CodexSessionMetadata {
+    assertSafeSessionLayout(this.userRoot);
     const id = input.id === undefined ? this.allocateId() : (assertSessionId(input.id), input.id);
     if (this.records.has(id) || existsSync(sessionDir(this.userRoot, id))) {
       throw new Error("session already exists");
@@ -91,8 +94,8 @@ export class CodexSessionManager {
       enabled: true,
       createdAt,
     };
+    ensureSafeSessionLayout(this.userRoot);
     const dir = sessionDir(this.userRoot, id);
-    mkdirSync(accountsRoot(this.userRoot), { recursive: true });
     try {
       mkdirSync(dir);
     } catch (error) {
@@ -131,6 +134,7 @@ export class CodexSessionManager {
   }
 
   async removeSession(id: string, options: RemoveCodexSessionOptions = {}): Promise<void> {
+    assertSafeSessionLayout(this.userRoot);
     const record = this.require(id);
     if (record.lifecycle === "STARTING" || record.lifecycle === "RUNNING" || record.lifecycle === "STOPPING") {
       if (!options.forceStop) {
@@ -326,25 +330,29 @@ export class CodexSessionManager {
 
   private require(id: string): SessionRecord {
     assertSessionId(id);
+    assertSafeSessionLayout(this.userRoot);
     const record = this.records.get(id);
     if (!record) throw new Error(`unknown session: ${id}`);
     return record;
   }
 
   private allocateId(): string {
+    const layout = assertSafeSessionLayout(this.userRoot);
     for (let i = 0; i < 8; i++) {
       const id = generateSessionId();
-      if (!this.records.has(id) && !existsSync(join(accountsRoot(this.userRoot), id))) return id;
+      if (!this.records.has(id) && !existsSync(join(layout.realAccountsRoot, id))) return id;
     }
     throw new Error("failed to allocate session id");
   }
 
   private persist(record: SessionRecord): void {
+    assertSafeSessionLayout(this.userRoot);
     writeJsonAtomic(sessionMetaPath(this.userRoot, record.metadata.id), record.metadata);
   }
 
   private loadFromDisk(): void {
-    const root = accountsRoot(this.userRoot);
+    const layout = assertSafeSessionLayout(this.userRoot);
+    const root = layout.realAccountsRoot;
     if (!existsSync(root)) return;
     let entries: string[] = [];
     try {
@@ -354,9 +362,9 @@ export class CodexSessionManager {
     }
     for (const name of entries) {
       if (!isSessionId(name)) continue;
-      const metaPath = sessionMetaPath(this.userRoot, name);
-      if (!existsSync(metaPath)) continue;
       try {
+        const metaPath = sessionMetaPath(this.userRoot, name);
+        if (!existsSync(metaPath)) continue;
         const raw = JSON.parse(readFileSync(metaPath, "utf8")) as unknown;
         const metadata = stripCredentials(raw, name);
         this.records.set(name, {

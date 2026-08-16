@@ -75,7 +75,6 @@ test("legacy absent permissions keeps old behavior", () => {
     "native-module",
     "native-view",
     "native-helper",
-    "codex-sessions",
   ] as TweakPermission[]) {
     assert.equal(hasTweakPermission(legacy, permission), true, permission);
   }
@@ -86,7 +85,7 @@ test("legacy absent permissions keeps old behavior", () => {
   assert.equal(plan.codex, "present");
   assert.equal(plan.codexWindows, "present");
   assert.equal(plan.nativeModule, "present");
-  assert.equal(plan.codexSessions, "present");
+  assert.equal(plan.codexSessions, "denied");
 });
 
 test("permissions: [] grants no optional capabilities", () => {
@@ -359,9 +358,29 @@ test("codex-sessions permission gates list/status capability", () => {
   );
   const allowed = snapshot({ permissions: ["codex-sessions"] });
   assert.equal(authorizeTweakCapability(allowed, allowed.id, "codex-sessions").id, allowed.id);
-  assert.equal(planTweakApi(allowed).codexSessions, "present");
-  assert.equal(planTweakApi(allowed).codex, "present");
+  assert.equal(planTweakApi(allowed.manifest).codexSessions, "present");
+  assert.equal(planTweakApi(allowed.manifest).codex, "present");
   assert.equal(planTweakApi(manifest({ permissions: [] })).codexSessions, "denied");
+});
+
+test("codex-sessions is explicit-only even for legacy omitted permissions", () => {
+  const legacy = manifest();
+  assert.equal(hasTweakPermission(legacy, "codex-sessions"), false);
+  assert.equal(hasTweakPermission(manifest({ permissions: [] }), "codex-sessions"), false);
+  assert.equal(hasTweakPermission(manifest({ permissions: ["codex-sessions"] }), "codex-sessions"), true);
+  assert.equal(hasTweakPermission(manifest({ permissions: ["settings"] }), "codex-sessions"), false);
+  assert.equal(planTweakApi(legacy).codexSessions, "denied");
+  assert.equal(planTweakApi(legacy).codex, "present");
+  const legacySnap = snapshot({ manifest: legacy });
+  assert.throws(
+    () => authorizeTweakCapability(legacySnap, legacySnap.id, "codex-sessions"),
+    /must declare codex-sessions permission/,
+  );
+  const allowed = snapshot({ permissions: ["codex-sessions"] });
+  assert.equal(authorizeTweakCapability(allowed, allowed.id, "codex-sessions").id, allowed.id);
+  assert.doesNotThrow(() => authorizeTweakCapability(legacySnap, legacySnap.id, "filesystem"));
+  assert.equal(tweakPermissionForIpcChannel("codexpp:codex-sessions-list"), "codex-sessions");
+  assert.equal(tweakPermissionForIpcChannel("codexpp:codex-sessions-status"), "codex-sessions");
 });
 
 function extractHandlerBody(source: string, channel: string): string {

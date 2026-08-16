@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireCodexSessionManager = exports.getCodexSessionManager = exports.setCodexSessionManager = exports.stripCredentials = exports.CodexSessionManager = exports.ISOLATED_ENV_ALLOWLIST = exports.isolatedSessionEnv = exports.resolveTrustedCodexExecutable = exports.createNodeCodexProcessLauncher = exports.CODEX_SESSION_LAST_EXIT_KEYS = exports.CODEX_SESSION_METADATA_KEYS = exports.isForbiddenSessionDeleteTarget = exports.collectForbiddenDeleteTargets = exports.rmSessionDir = exports.sessionSqliteHome = exports.sessionCodexHome = exports.sessionMetaPath = exports.sessionDir = exports.accountsRoot = exports.sessionsRoot = exports.SESSION_ID_RE = exports.isSessionId = exports.assertSessionId = exports.generateSessionId = void 0;
+exports.requireCodexSessionManager = exports.getCodexSessionManager = exports.setCodexSessionManager = exports.stripCredentials = exports.CodexSessionManager = exports.ISOLATED_ENV_ALLOWLIST = exports.isolatedSessionEnv = exports.resolveTrustedCodexExecutable = exports.createNodeCodexProcessLauncher = exports.CODEX_SESSION_LAST_EXIT_KEYS = exports.CODEX_SESSION_METADATA_KEYS = exports.ensureSafeSessionLayout = exports.assertSafeSessionLayout = exports.isForbiddenSessionDeleteTarget = exports.collectForbiddenDeleteTargets = exports.rmSessionDir = exports.sessionSqliteHome = exports.sessionCodexHome = exports.sessionMetaPath = exports.sessionDir = exports.accountsRoot = exports.sessionsRoot = exports.SESSION_ID_RE = exports.isSessionId = exports.assertSessionId = exports.generateSessionId = void 0;
 var ids_1 = require("./ids");
 Object.defineProperty(exports, "generateSessionId", { enumerable: true, get: function () { return ids_1.generateSessionId; } });
 Object.defineProperty(exports, "assertSessionId", { enumerable: true, get: function () { return ids_1.assertSessionId; } });
@@ -16,6 +16,8 @@ Object.defineProperty(exports, "sessionSqliteHome", { enumerable: true, get: fun
 Object.defineProperty(exports, "rmSessionDir", { enumerable: true, get: function () { return paths_1.rmSessionDir; } });
 Object.defineProperty(exports, "collectForbiddenDeleteTargets", { enumerable: true, get: function () { return paths_1.collectForbiddenDeleteTargets; } });
 Object.defineProperty(exports, "isForbiddenSessionDeleteTarget", { enumerable: true, get: function () { return paths_1.isForbiddenSessionDeleteTarget; } });
+Object.defineProperty(exports, "assertSafeSessionLayout", { enumerable: true, get: function () { return paths_1.assertSafeSessionLayout; } });
+Object.defineProperty(exports, "ensureSafeSessionLayout", { enumerable: true, get: function () { return paths_1.ensureSafeSessionLayout; } });
 var types_1 = require("./types");
 Object.defineProperty(exports, "CODEX_SESSION_METADATA_KEYS", { enumerable: true, get: function () { return types_1.CODEX_SESSION_METADATA_KEYS; } });
 Object.defineProperty(exports, "CODEX_SESSION_LAST_EXIT_KEYS", { enumerable: true, get: function () { return types_1.CODEX_SESSION_LAST_EXIT_KEYS; } });

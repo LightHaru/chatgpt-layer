@@ -3,9 +3,11 @@
  * `TweakManifest.permissions` enforcement.
  *
  * Policy:
- *   1. permissions ABSENT: legacy — preserve existing API behavior
+ *   1. permissions ABSENT: legacy — preserve historical API behavior
  *   2. permissions PRESENT: enforce the declared list strictly
  *   3. permissions: [] is NOT legacy — explicitly no optional capabilities
+ *   4. EXPLICIT_ONLY_PERMISSIONS (`codex-sessions`) are never implied by an
+ *      omitted field. They require the name to appear in the array.
  *
  * Historical aliases (`codex.windows` → `codex-windows`, `codex.views` →
  * `codex-views`) are preserved and treated as equivalent.
@@ -96,6 +98,7 @@ export interface TweakIpcBridge {
 export declare function normalizePermission(permission: string): CanonicalTweakPermission;
 export declare function hasExplicitPermissions(manifest: Pick<TweakManifest, "permissions">): boolean;
 export declare function isLegacyPermissionManifest(manifest: Pick<TweakManifest, "permissions">): boolean;
+export declare const EXPLICIT_ONLY_PERMISSIONS: Set<CanonicalTweakPermission>;
 export declare function hasTweakPermission(manifest: Pick<TweakManifest, "permissions">, permission: TweakPermission | CanonicalTweakPermission): boolean;
 export declare function permissionDeniedMessage(tweakId: string, permission: TweakPermission | CanonicalTweakPermission): string;
 export declare function permissionDeniedError(tweakId: string, permission: TweakPermission | CanonicalTweakPermission): Error;
