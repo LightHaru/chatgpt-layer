@@ -6,12 +6,14 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ## 1.1.3
 
+Release notes: [docs/releases/1.1.3.md](docs/releases/1.1.3.md)
+
 Security pins that landed on main after 1.1.2, plus standalone product docs.
 
 ### Security
 
 - Store Update/Install uses listed `approvedCommitSha` only.
-- Layer self-update defaults off (opt-in).
+- Layer self-update defaults off (opt-in). The auto-repair watcher only runs `repair` (no Layer self-update).
 - Privileged IPC is gated to ChatGPT/Layer frames.
 - `doctor` notes the Win/Linux asar integrity writer / fuse gap: sidecar writer is unimplemented and `EnableEmbeddedAsarIntegrityValidation` is left ON.
 
@@ -20,9 +22,14 @@ Security pins that landed on main after 1.1.2, plus standalone product docs.
 - README is a standalone bilingual product page. Credits Codex++ (based on, MIT) after leaving the GitHub fork network.
 - SECURITY.md and ARCHITECTURE.md match store pin + opt-in self-update (no longer advisory-only / silent hourly Layer updates).
 
+### Fixed
+
+- Renderer/preload bundle no longer pulls `node:crypto` via `tweak-store.ts` (CI build / esbuild).
+- Watcher tests match repair-only behavior (CI tests).
+
 ### Ghi chú
 
-README đứng độc lập, ghi công Codex++. Store Update chỉ cài SHA đã ghim. Self-update Layer mặc định tắt.
+README đứng độc lập, ghi công Codex++. Store Update chỉ cài SHA đã ghim. Self-update Layer mặc định tắt. Watcher chỉ repair, không self-update Layer. CI: crypto không vào preload; test watcher khớp repair-only.
 
 ## 1.1.2
 
