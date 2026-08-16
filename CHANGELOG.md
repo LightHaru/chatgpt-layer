@@ -20,6 +20,7 @@ Security pins that landed on main after 1.1.2, plus standalone product docs.
 ### Changed
 
 - README is a standalone bilingual product page. Credits Codex++ (based on, MIT) after leaving the GitHub fork network.
+- README visual pass (badges/icons).
 - SECURITY.md and ARCHITECTURE.md match store pin + opt-in self-update (no longer advisory-only / silent hourly Layer updates).
 
 ### Fixed
