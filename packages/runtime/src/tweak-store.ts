@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { TweakManifest } from "@codex-plusplus/sdk";
 
 /** Commit of store/index.json reviewed into this runtime. Not floating main. */
@@ -208,19 +207,6 @@ export function resolveTweakStoreIndexUrl(env: NodeJS.Dict<string | undefined> =
   return DEFAULT_TWEAK_STORE_INDEX_URL;
 }
 
-export function hashStoreIndex(body: string | Buffer): string {
-  return createHash("sha256").update(body).digest("hex");
-}
-
-export function assertStoreIndexMatchesPin(
-  body: string | Buffer,
-  expectedSha256 = PINNED_TWEAK_STORE_INDEX_SHA256,
-): void {
-  const hash = hashStoreIndex(body);
-  if (hash !== expectedSha256) {
-    throw new Error(`Store index hash ${hash} does not match runtime pin ${expectedSha256}`);
-  }
-}
 
 export function assertStoreInstallPin(entry: TweakStoreEntry, commitSha: string): void {
   if (entry.approvedCommitSha.toLowerCase() !== commitSha.toLowerCase()) {

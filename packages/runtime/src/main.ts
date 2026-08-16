@@ -44,9 +44,9 @@ import type {
   NativeViewAttachOptions,
   TweakPermission,
 } from "@codex-plusplus/sdk";
+import { assertStoreIndexMatchesPin } from "./tweak-store-integrity";
 import {
   DEFAULT_TWEAK_STORE_INDEX_URL,
-  assertStoreIndexMatchesPin,
   isFullCommitSha,
   normalizeGitHubRepo,
   normalizeStoreRegistry,
