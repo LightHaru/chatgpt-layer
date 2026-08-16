@@ -41,6 +41,27 @@ async function packFixture(dir: string, pkg: Record<string, unknown>, extra: Rec
   return archive;
 }
 
+const NESTED_PKG = `${JSON.stringify({ name: "foo", version: "1.0.0" }, null, 2)}\n`;
+
+async function packNestedAsar(
+  dir: string,
+  options: { rootPkg?: string | Buffer | null },
+): Promise<string> {
+  const src = join(dir, "src");
+  const archive = join(dir, "app.asar");
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, "main.js"), "console.log(1);\n");
+  if (options.rootPkg !== null && options.rootPkg !== undefined) {
+    writeFileSync(join(src, "package.json"), options.rootPkg);
+  }
+  const nestedDir = join(src, "node_modules", "foo");
+  mkdirSync(nestedDir, { recursive: true });
+  writeFileSync(join(nestedDir, "package.json"), NESTED_PKG);
+  await asar.createPackageWithOptions(src, archive, { globOptions: { dot: true } });
+  asar.uncache(archive);
+  return archive;
+}
+
 function recordingFs(calls: string[]): AsarReplaceFs {
   const rec = (op: string, path: string) => { calls.push(`${op}:${path}`); };
   return {
@@ -102,6 +123,59 @@ test("asarHasReadablePackageJson rejects empty, zeroed, and invalid archives", a
     await asar.createPackageWithOptions(src, badJson, { globOptions: { dot: true } });
     asar.uncache(badJson);
     assert.equal(asarHasReadablePackageJson(badJson), false);
+  } finally {
+    await cleanupTempTree(root);
+  }
+});
+
+test("root package.json plus nested package.json is readable", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-root-nested-ok-"));
+  try {
+    const archive = await packNestedAsar(root, {
+      rootPkg: `${JSON.stringify({ name: "ok", main: "main.js" }, null, 2)}\n`,
+    });
+    const bytes = readFileSync(archive);
+    assert.equal(asarHasReadablePackageJson(archive), true);
+    assert.equal(asarBufferHasReadablePackageJson(bytes), true);
+  } finally {
+    await cleanupTempTree(root);
+  }
+});
+
+test("nested node_modules package.json does not satisfy a missing root package.json", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-nested-only-"));
+  try {
+    const archive = await packNestedAsar(root, { rootPkg: null });
+    const bytes = readFileSync(archive);
+    assert.equal(asarHasReadablePackageJson(archive), false);
+    assert.equal(asarBufferHasReadablePackageJson(bytes), false);
+  } finally {
+    await cleanupTempTree(root);
+  }
+});
+
+test("nested package.json does not satisfy an invalid root package.json", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-root-badjson-"));
+  try {
+    const archive = await packNestedAsar(root, { rootPkg: "{not-json" });
+    const bytes = readFileSync(archive);
+    assert.equal(asarHasReadablePackageJson(archive), false);
+    assert.equal(asarBufferHasReadablePackageJson(bytes), false);
+  } finally {
+    await cleanupTempTree(root);
+  }
+});
+
+test("nested package.json does not satisfy a zeroed or NUL root package.json", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-root-nul-"));
+  try {
+    const emptyRoot = await packNestedAsar(join(root, "empty"), { rootPkg: "" });
+    assert.equal(asarHasReadablePackageJson(emptyRoot), false);
+    assert.equal(asarBufferHasReadablePackageJson(readFileSync(emptyRoot)), false);
+
+    const nulRoot = await packNestedAsar(join(root, "nul"), { rootPkg: Buffer.alloc(16) });
+    assert.equal(asarHasReadablePackageJson(nulRoot), false);
+    assert.equal(asarBufferHasReadablePackageJson(readFileSync(nulRoot)), false);
   } finally {
     await cleanupTempTree(root);
   }

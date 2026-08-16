@@ -48,9 +48,10 @@ export function readHeaderHash(asarPath: string): AsarHeaderInfo {
 }
 
 /**
- * True when package.json can be read from RAW asar file bytes: header JSON
- * lists a non-empty package.json, and those payload bytes are non-empty,
- * contain no NUL, and parse as JSON. Does not use extractFile/getRawHeader
+ * True when the ROOT app.asar/package.json can be read from RAW asar file
+ * bytes: header.files["package.json"] is a packed non-empty file, and those
+ * payload bytes are non-empty, contain no NUL, and parse as JSON. Nested
+ * package.json files are ignored. Does not use extractFile/getRawHeader
  * and does not log file contents.
  */
 export function asarHasReadablePackageJson(asarPath: string): boolean {
@@ -88,8 +89,10 @@ function inspectPackedAsar(bytes: Buffer): PackedAsarInspection {
     const headerJson = headerPickle.subarray(8, 8 + jsonLength).toString("utf8");
     if (!headerJson || headerJson.includes("\0")) return { ok: false, reason: "bad-pickle" };
     const header = JSON.parse(headerJson) as { files?: Record<string, unknown> };
-    const entry = findPackedPackageJson(header);
-    if (!entry || entry.size <= 0) return { ok: false, reason: "no-package.json" };
+    // ChatGPT Layer injects the loader into app.asar/package.json at the archive
+    // root. Nested node_modules/*/package.json must not satisfy this check.
+    const entry = packedFileEntry(header.files?.["package.json"]);
+    if (!entry) return { ok: false, reason: "no-package.json" };
     const dataStart = 8 + headerPickleSize;
     const start = dataStart + entry.offset;
     const end = start + entry.size;
@@ -127,20 +130,6 @@ async function waitForReadablePackedAsar(path: string, label: string): Promise<v
     if (attempt < attempts) await yieldToEventLoop();
   }
   throw new Error(`${label} asar is unreadable (${reason}, size=${size})`);
-}
-
-function findPackedPackageJson(node: unknown): { size: number; offset: number } | null {
-  if (!node || typeof node !== "object") return null;
-  const rec = node as { files?: Record<string, unknown> };
-  if (!rec.files) return null;
-  const direct = rec.files["package.json"];
-  const parsed = packedFileEntry(direct);
-  if (parsed) return parsed;
-  for (const child of Object.values(rec.files)) {
-    const found = findPackedPackageJson(child);
-    if (found) return found;
-  }
-  return null;
 }
 
 function packedFileEntry(node: unknown): { size: number; offset: number } | null {
