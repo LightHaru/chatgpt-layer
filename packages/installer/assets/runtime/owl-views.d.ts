@@ -1,0 +1,34 @@
+import type { CodexRuntimeCapabilities, CodexViewCreateOptions, CodexViewRef } from "@codex-plusplus/sdk";
+import type { NativeTweakContext } from "./native-bridge";
+export type OwlViewAttachMode = "contentView" | "browserView";
+export interface ManagedOwlView {
+    key: string;
+    tweakId: string;
+    id: string;
+    view: Electron.BrowserView;
+    parentWindowId: number | null;
+    attachMode: OwlViewAttachMode | null;
+    disposeBindings: Array<() => void>;
+    disposed: boolean;
+}
+export declare const untrustedWebContentsIds: Set<number>;
+export declare function markUntrustedWebContents(wc: Electron.WebContents): void;
+export declare function getOwlViewCapabilities(): CodexRuntimeCapabilities["views"];
+export declare function createOwlView(ctx: NativeTweakContext, opts: CodexViewCreateOptions): Promise<CodexViewRef>;
+export declare function callOwlView(tweakId: string, id: string, method: string, arg?: unknown, arg2?: unknown): Promise<unknown>;
+export declare function owlViewRef(view: ManagedOwlView): CodexViewRef;
+export declare function attachOwlView(view: ManagedOwlView, parent: Electron.BrowserWindow): void;
+export declare function bringOwlViewToFront(view: ManagedOwlView): void;
+export declare function setOwlViewBounds(view: ManagedOwlView, bounds: Electron.Rectangle): void;
+export declare function setOwlViewVisible(view: ManagedOwlView, visible: boolean): void;
+export declare function disposeOwlViewById(tweakId: string, id: string): void;
+export declare function disposeOwlViewsForTweak(tweakId: string): void;
+export declare function disposeAllOwlViews(): void;
+export declare function disposeOwlView(view: ManagedOwlView): void;
+export declare function owlViewFor(tweakId: string, id: string): ManagedOwlView;
+export declare function owlViewKey(tweakId: string, viewId: string): string;
+export declare function addOwlChildView(parent: Electron.BrowserWindow, child: Electron.BrowserView): void;
+export declare function removeOwlChildView(parent: Electron.BrowserWindow, child: Electron.BrowserView): void;
+export declare function bindWindowEvent(win: Electron.BrowserWindow, view: ManagedOwlView, event: string, listener: (...args: unknown[]) => void): void;
+export declare function assertBridgeId(value: string, label: string): string;
+export declare function assertBounds(bounds: Electron.Rectangle): void;

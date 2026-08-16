@@ -1,0 +1,17 @@
+import { type CodexPlusPlusUpdateCheck, type InstallationSource, type SelfUpdateState } from "./config-state";
+export declare function installSparkleUpdateHook(): void;
+export declare function wrapSparkleExports(loaded: unknown): void;
+export declare function prepareSignedCodexForSparkleInstall(): void;
+export declare function isDeveloperIdSignedApp(appRoot: string): boolean;
+export declare function inferMacAppRoot(): string | null;
+export declare const UPDATE_CHECK_INTERVAL_MS: number;
+export declare const VERSION_RE: RegExp;
+export declare function ensureCodexPlusPlusUpdateCheck(force?: boolean): Promise<CodexPlusPlusUpdateCheck>;
+export declare function normalizeVersion(v: string): string;
+export declare function compareVersions(a: string, b: string): number;
+export declare function fallbackSourceRoot(): string | null;
+export declare function describeInstallationSource(sourceRoot: string | null): InstallationSource;
+export declare function startInstalledCli(cli: string, args: string[]): void;
+export declare function startInstalledCliWithLaunchd(cli: string, args: string[]): boolean;
+export declare function shellQuote(value: string): string;
+export declare function markSelfUpdateStarted(sourceRoot: string): SelfUpdateState;
