@@ -8,7 +8,7 @@
  */
 import asar from "@electron/asar";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync, openSync, fsyncSync, closeSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -63,23 +63,10 @@ export async function patchAsar(
     asar.uncache(snapshot);
     await mutate(extractDir);
 
-    let packedOk = false;
-    for (let packAttempt = 1; packAttempt <= 10; packAttempt++) {
-      await asar.createPackageWithOptions(extractDir, outAsar, {
-        globOptions: { dot: true },
-        ...originalUnpackOptions,
-      });
-      asar.uncache(outAsar);
-      try { fsyncPath(outAsar); } catch { /* ignore */ }
-      if (asarHasPackageJson(outAsar)) {
-        packedOk = true;
-        break;
-      }
-      await delay(50);
-    }
-    if (!packedOk) {
-      throw new Error("packed asar is unreadable");
-    }
+    await asar.createPackageWithOptions(extractDir, outAsar, {
+      globOptions: { dot: true },
+      ...originalUnpackOptions,
+    });
 
     // Atomic-ish replace: write next to the target, then rename. This prevents
     // a denied write (e.g. macOS App Management TCC) from leaving the bundle
@@ -88,7 +75,6 @@ export async function patchAsar(
     const stagingPath = `${asarPath}.codexpp-new`;
     try {
       cpSync(outAsar, stagingPath);
-      fsyncPath(stagingPath);
     } catch (e) {
       throw annotatePermError(e, asarPath);
     }
@@ -102,9 +88,7 @@ export async function patchAsar(
     // in place must drop that cache or later extractFile/extractAll reads
     // the old header against the new bytes.
     asar.uncache(asarPath);
-    const info = readHeaderHash(asarPath);
-    asar.uncache(asarPath);
-    return info;
+    return readHeaderHash(asarPath);
   } finally {
     try {
       await cleanupTempTree(work);
@@ -115,29 +99,10 @@ export async function patchAsar(
 }
 
 
-function fsyncPath(path: string): void {
-  const fd = openSync(path, "r+");
-  try { fsyncSync(fd); } finally { closeSync(fd); }
-}
-
-function asarHasPackageJson(asarPath: string): boolean {
-  try {
-    asar.uncache(asarPath);
-    const raw = (asar.extractFile(asarPath, "package.json") as Buffer).toString("utf8");
-    asar.uncache(asarPath);
-    if (!raw || raw.charCodeAt(0) === 0) return false;
-    JSON.parse(raw);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function replaceAsarAtomically(stagingPath: string, asarPath: string): Promise<void> {
   const win = process.platform === "win32";
   const attempts = win ? 40 : 8;
   const delayMs = win ? 150 : 50;
-  const bytes = readFileSync(stagingPath);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     asar.uncache(asarPath);
@@ -145,24 +110,22 @@ async function replaceAsarAtomically(stagingPath: string, asarPath: string): Pro
     try {
       if (win) {
         try { chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
-        // Overwrite in place. Unlink-then-rename on Windows can leave dest as a
-        // delete-pending zero-filled file while this process still has it mapped.
-        writeFileSync(asarPath, bytes);
-        fsyncPath(asarPath);
-      } else {
-        renameSync(stagingPath, asarPath);
+        try { unlinkSync(asarPath); } catch { /* dest still locked */ }
       }
-      if (!asarHasPackageJson(asarPath)) {
-        const err = new Error("replaced asar is unreadable") as NodeJS.ErrnoException;
-        err.code = "EPERM";
-        throw err;
-      }
-      try { unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
+      renameSync(stagingPath, asarPath);
       asar.uncache(asarPath);
       return;
     } catch (e) {
       lastError = e;
       if (!isTransientCleanupError(e) || attempt === attempts) throw e;
+      if (win) {
+        try {
+          cpSync(stagingPath, asarPath);
+          try { unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
+          asar.uncache(asarPath);
+          return;
+        } catch { /* dest still locked; retry */ }
+      }
       await delay(delayMs);
     }
   }
