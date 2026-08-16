@@ -107,6 +107,26 @@ own preload and break the app. The runtime uses
 `session.registerPreloadScript()` when available and falls back to
 `session.setPreloads()` on older Electron-compatible builds.
 
+## Runtime compatibility layer
+
+Compatibility is capability-driven. The runtime inspects available ChatGPT
+Desktop / Owl / Electron-compatible surfaces (`session.registerPreloadScript`,
+window services, `contentView`, `BrowserView`, and so on) and selects
+behavior from those results.
+
+App version is diagnostic metadata, not the primary gate. An unknown or future
+ChatGPT version is not blocked just because the version string is unrecognized.
+
+Unsupported private Owl surfaces degrade to available fallbacks (for example
+`BrowserView` when `contentView.addChildView` is gone, or `session.setPreloads`
+when `registerPreloadScript` is missing). Privileged APIs such as window
+creation fail closed when their factories are absent.
+
+Detection lives in `packages/runtime/src/codex-runtime-probe.ts`. Window, view,
+and preload registration code consume that probe instead of repeating
+`typeof x === "function"` sniffing. The detailed snapshot is internal; public
+`CodexRuntimeInfo` / `CodexRuntimeCapabilities` are unchanged.
+
 ## Update handling
 
 When Codex auto-updates via Sparkle:

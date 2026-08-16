@@ -26,6 +26,7 @@ const node_fs_1 = require("node:fs");
 const node_crypto_1 = require("node:crypto");
 const runtime_paths_1 = require("./runtime-paths");
 const codex_windows_1 = require("./codex-windows");
+const codex_runtime_probe_1 = require("./codex-runtime-probe");
 exports.untrustedWebContentsIds = new Set();
 const owlViews = new Map();
 function markUntrustedWebContents(wc) {
@@ -33,32 +34,20 @@ function markUntrustedWebContents(wc) {
     wc.once("destroyed", () => { exports.untrustedWebContentsIds.delete(wc.id); });
 }
 function getOwlViewCapabilities() {
-    const parent = (0, codex_windows_1.getPrimaryCodexWindow)() ?? electron_1.BrowserWindow.getFocusedWindow();
-    const contentView = (0, codex_windows_1.asRecord)(parent)?.contentView;
-    let sampleView = null;
-    try {
-        sampleView = new electron_1.BrowserView({ webPreferences: { sandbox: true } });
-    }
-    catch { }
-    const webContentsView = (0, codex_windows_1.asRecord)(sampleView)?.webContentsView;
-    const privateViewTree = typeof (0, codex_windows_1.asRecord)(contentView)?.addChildView === "function" &&
-        typeof (0, codex_windows_1.asRecord)(contentView)?.removeChildView === "function";
-    const webContentsViewAvailable = Boolean(webContentsView) &&
-        typeof (0, codex_windows_1.asRecord)(webContentsView)?.setBounds === "function";
-    const privateAttach = privateViewTree && webContentsViewAvailable;
-    const browserViewFallback = typeof (0, codex_windows_1.asRecord)(parent)?.addBrowserView === "function";
-    try {
-        if (sampleView && !sampleView.webContents.isDestroyed()) {
-            sampleView.webContents.close({ waitForBeforeUnload: false });
-        }
-    }
-    catch { }
-    return {
-        create: privateAttach || browserViewFallback,
-        privateViewTree: privateAttach,
-        webContentsView: webContentsViewAvailable,
-        browserViewFallback,
-    };
+    const snapshot = (0, codex_runtime_probe_1.probeRuntimeCompatibility)({
+        userRoot: "",
+        runtimeDir: "",
+        codexVersion: null,
+        channel: null,
+        getWindowServices: codex_windows_1.getCodexWindowServices,
+        env: {
+            browserView: electron_1.BrowserView,
+            browserWindow: electron_1.BrowserWindow,
+            inspectExistingWindow: () => (0, codex_runtime_probe_1.windowSampleFrom)((0, codex_windows_1.getPrimaryCodexWindow)() ?? electron_1.BrowserWindow.getFocusedWindow()),
+            inspectBrowserView: () => (0, codex_runtime_probe_1.viewSampleFromConstructor)(electron_1.BrowserView),
+        },
+    });
+    return (0, codex_runtime_probe_1.viewsCapabilitiesFromSnapshot)(snapshot);
 }
 async function createOwlView(ctx, opts) {
     const id = assertBridgeId(opts.id ?? (0, node_crypto_1.randomUUID)(), "Codex view id");
@@ -169,14 +158,13 @@ function owlViewRef(view) {
     };
 }
 function attachOwlView(view, parent) {
-    const contentView = (0, codex_windows_1.asRecord)(parent)?.contentView;
-    const webContentsView = (0, codex_windows_1.asRecord)(view.view)?.webContentsView;
-    if (typeof (0, codex_windows_1.asRecord)(parent)?.addBrowserView === "function") {
+    const targets = (0, codex_runtime_probe_1.inspectViewAttachTargets)(parent, view.view);
+    if (targets.addBrowserView) {
         (0, codex_windows_1.callObjectMethod)(parent, "addBrowserView", [view.view]);
         view.attachMode = "browserView";
     }
-    else if (typeof (0, codex_windows_1.asRecord)(contentView)?.addChildView === "function" &&
-        webContentsView) {
+    else if (targets.addChildView &&
+        targets.webContentsView) {
         try {
             addOwlChildView(parent, view.view);
             view.attachMode = "contentView";

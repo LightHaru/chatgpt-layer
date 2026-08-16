@@ -30,6 +30,23 @@ The `app.asar` still contains the desktop JavaScript app. Its package metadata
 still uses the historical `openai-codex-electron` name and exposes Owl build
 scripts such as `owl`, `build:owl`, and `owl:package`.
 
+## Compatibility layer
+
+Runtime behavior is selected from detected capabilities, not from ChatGPT app
+version checks. Version/build strings are recorded for diagnostics only.
+
+If a private Owl surface disappears, Codex++ degrades to the fallback that
+still exists (Owl `contentView` → Electron-compatible `BrowserView`;
+`session.registerPreloadScript` → `session.setPreloads`). Missing privileged
+window services are reported unavailable rather than assumed to work. Unknown
+future app versions are not treated as unsupported when the live APIs are
+present.
+
+Compatibility detection is centralized in
+`packages/runtime/src/codex-runtime-probe.ts`. Window and view modules consume
+that probe (or small helpers it exports) instead of each re-sniffing private
+APIs. The detailed compatibility snapshot stays internal to the runtime.
+
 ## What Owl Is
 
 For Codex++ purposes, Owl is a native Codex shell plus a Chromium runtime that

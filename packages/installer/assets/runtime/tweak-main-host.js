@@ -325,6 +325,7 @@ function currentRuntimeInfo() {
         codexVersion: installerState?.codexVersion ?? null,
         channel: null,
         getWindowServices: codex_windows_1.getCodexWindowServices,
+        env: liveProbeEnv(),
     });
 }
 function currentRuntimeCapabilities() {
@@ -336,8 +337,13 @@ function currentRuntimeCapabilities() {
         channel: null,
         getWindowServices: codex_windows_1.getCodexWindowServices,
         getNativeCapabilities: () => exports.nativeBridge.getCapabilities(),
-        getViewCapabilities: () => (0, owl_views_1.getOwlViewCapabilities)(),
+        env: liveProbeEnv(),
     });
+}
+function liveProbeEnv() {
+    return {
+        inspectExistingWindow: () => (0, codex_runtime_probe_1.windowSampleFrom)((0, codex_windows_1.getPrimaryCodexWindow)()),
+    };
 }
 function tweakContext(tweakId, permission) {
     const tweak = permission

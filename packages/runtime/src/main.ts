@@ -13,7 +13,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import chokidar from "chokidar";
 import { appendCappedLog } from "./logging";
-import { getCdpStatus, listCdpTargets } from "./codex-runtime-probe";
+import { getCdpStatus, listCdpTargets, selectPreloadRegistration } from "./codex-runtime-probe";
 import { getWatcherHealth } from "./watcher-health";
 import {
   reloadTweaks,
@@ -144,24 +144,28 @@ function registerPreload(s: Electron.Session, label: string, kind: "full" | "gue
   const filePath = kind === "guest" && existsSync(GUEST_PRELOAD_PATH) ? GUEST_PRELOAD_PATH : PRELOAD_PATH;
   const id = kind === "guest" ? "codex-plusplus-guest" : "codex-plusplus";
   try {
-    const reg = (s as unknown as {
-      registerPreloadScript?: (opts: {
-        type?: "frame" | "service-worker";
-        id?: string;
-        filePath: string;
-      }) => string;
-    }).registerPreloadScript;
-    if (typeof reg === "function") {
+    const strategy = selectPreloadRegistration(s);
+    if (strategy === "registerPreloadScript") {
+      const reg = (s as unknown as {
+        registerPreloadScript: (opts: {
+          type?: "frame" | "service-worker";
+          id?: string;
+          filePath: string;
+        }) => string;
+      }).registerPreloadScript;
       reg.call(s, { type: "frame", filePath, id });
       log("info", `preload registered (registerPreloadScript) on ${label}:`, filePath);
       return;
     }
-    // Fallback for older Electron versions.
-    const existing = s.getPreloads();
-    if (!existing.includes(filePath)) {
-      s.setPreloads([...existing, filePath]);
+    if (strategy === "setPreloads") {
+      const existing = s.getPreloads();
+      if (!existing.includes(filePath)) {
+        s.setPreloads([...existing, filePath]);
+      }
+      log("info", `preload registered (setPreloads) on ${label}:`, filePath);
+      return;
     }
-    log("info", `preload registered (setPreloads) on ${label}:`, filePath);
+    log("error", `preload registration on ${label} failed: no session preload API`);
   } catch (e) {
     if (e instanceof Error && e.message.includes("existing ID")) {
       log("info", `preload already registered on ${label}:`, PRELOAD_PATH);

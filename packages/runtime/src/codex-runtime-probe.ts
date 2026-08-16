@@ -1,4 +1,3 @@
-import { app, BrowserWindow } from "electron";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type {
@@ -9,6 +8,57 @@ import type {
   CodexRuntimeType,
 } from "@codex-plusplus/sdk";
 
+/**
+ * Runtime compatibility is capability-driven. App/version strings are
+ * diagnostic metadata only — they must not gate behavior. Probe adapters
+ * inspect existing surfaces; they never create windows, mutate persistent
+ * state, or touch the network.
+ */
+
+export type RuntimeSupportLevel = "supported" | "degraded" | "unknown";
+export type PreloadRegistrationStrategy = "registerPreloadScript" | "setPreloads" | "unavailable";
+
+export interface ProbeAppAdapter {
+  getVersion?: () => string;
+  getAppPath?: () => string;
+  isPackaged?: boolean;
+}
+
+export interface ProbeSessionAdapter {
+  registerPreloadScript?: unknown;
+  setPreloads?: unknown;
+  getPreloads?: unknown;
+}
+
+export interface ProbeWindowSample {
+  addBrowserView?: unknown;
+  fromId?: unknown;
+  contentView?: unknown;
+  addChildView?: unknown;
+  removeChildView?: unknown;
+}
+
+export interface ProbeViewSample {
+  present?: boolean;
+  webContentsView?: unknown;
+  setBounds?: unknown;
+}
+
+export interface RuntimeProbeEnv {
+  platform?: NodeJS.Platform;
+  execPath?: string;
+  resourcesPath?: string | null;
+  existsSync?: (path: string) => boolean;
+  processEnv?: NodeJS.ProcessEnv;
+  app?: ProbeAppAdapter | null;
+  session?: { defaultSession?: ProbeSessionAdapter | null } | ProbeSessionAdapter | null;
+  browserWindow?: { fromId?: unknown; getFocusedWindow?: () => unknown; getAllWindows?: () => unknown[] } | null;
+  browserView?: unknown;
+  getWindowServices?: () => unknown | null;
+  inspectExistingWindow?: () => ProbeWindowSample | null;
+  inspectBrowserView?: () => ProbeViewSample | null;
+}
+
 export interface RuntimeProbeOptions {
   userRoot: string;
   runtimeDir: string;
@@ -16,46 +66,173 @@ export interface RuntimeProbeOptions {
   channel: string | null;
   getWindowServices(): unknown | null;
   getNativeCapabilities?(): CodexRuntimeCapabilities["native"];
-  getViewCapabilities?(): CodexRuntimeCapabilities["views"];
+  env?: RuntimeProbeEnv;
+}
+
+/** Internal snapshot. Not part of the public SDK. */
+export interface RuntimeCompatibilitySnapshot {
+  runtimeType: CodexRuntimeType;
+  appVersion: string | null;
+  buildFlavor: string | null;
+  preload: {
+    registerPreloadScript: boolean;
+    setPreloadsFallback: boolean;
+  };
+  windows: {
+    windowServices: boolean;
+    createWindow: boolean;
+    getPrimaryWindow: boolean;
+    registerWindow: boolean;
+  };
+  views: {
+    browserView: boolean;
+    contentView: boolean;
+    webContentsView: boolean;
+    privateViewTree: boolean;
+  };
+  shell: {
+    owl: boolean;
+    electronCompatible: boolean;
+  };
+  support: {
+    level: RuntimeSupportLevel;
+    reasons: string[];
+  };
+}
+
+export interface InspectedWindowServices {
+  present: boolean;
+  createWindow: boolean;
+  createFreshWindow: boolean;
+  createFreshLocalWindow: boolean;
+  ensureHostWindow: boolean;
+  getPrimaryWindow: boolean;
+  getPrimaryWindowFromManager: boolean;
+  registerWindow: boolean;
+  canCreate: boolean;
+}
+
+export interface ViewAttachTargets {
+  addBrowserView: boolean;
+  contentView: boolean;
+  addChildView: boolean;
+  removeChildView: boolean;
+  webContentsView: boolean;
+  webContentsViewSetBounds: boolean;
+}
+
+export function probeRuntimeCompatibility(opts: RuntimeProbeOptions): RuntimeCompatibilitySnapshot {
+  const env = { ...createDefaultProbeEnv(opts), ...opts.env };
+  const getWindowServices = env.getWindowServices ?? opts.getWindowServices;
+  const runtimeType = detectRuntimeType(env);
+  const appVersion = opts.codexVersion ?? safeCall(() => env.app?.getVersion?.()) ?? null;
+  const appPath = safeAppPath(env);
+  const buildFlavor = safeBuildFlavor(env, appPath);
+  const session = defaultSessionFrom(env);
+  const preloadStrategy = selectPreloadRegistration(session);
+  const windows = inspectWindowServices(safeCall(getWindowServices) ?? null);
+  const windowSample = env.inspectExistingWindow?.() ?? null;
+  const viewSample = env.inspectBrowserView?.() ?? viewSampleFromConstructor(env.browserView);
+  const attach = inspectViewAttachTargets(windowSampleToParent(windowSample), viewSampleToView(viewSample));
+  const browserViewCtor = env.browserView != null || Boolean(viewSample?.present);
+  const browserView = attach.addBrowserView || browserViewCtor;
+  const webContentsViewObserved = Boolean(viewSample?.webContentsView) || attach.webContentsView;
+  const webContentsViewSetBounds =
+    attach.webContentsViewSetBounds ||
+    isFn(asRecord(viewSample?.webContentsView)?.setBounds);
+  const webContentsView = webContentsViewObserved && webContentsViewSetBounds;
+  const privateViewTree = attach.addChildView && attach.removeChildView && webContentsView;
+  const electronCompatible =
+    runtimeType === "electron" ||
+    runtimeType === "owl" ||
+    session != null ||
+    env.browserWindow != null ||
+    env.browserView != null ||
+    env.app != null;
+  const owl = runtimeType === "owl";
+  const preload = {
+    registerPreloadScript: preloadStrategy === "registerPreloadScript",
+    setPreloadsFallback: isFn(asRecord(session)?.setPreloads),
+  };
+  const snapshotWindows = {
+    windowServices: windows.present,
+    createWindow: windows.canCreate,
+    getPrimaryWindow: windows.getPrimaryWindow || windows.getPrimaryWindowFromManager,
+    registerWindow: windows.registerWindow,
+  };
+  const snapshotViews = {
+    browserView,
+    contentView: attach.contentView,
+    webContentsView,
+    privateViewTree,
+  };
+  const shell = { owl, electronCompatible };
+  return {
+    runtimeType,
+    appVersion,
+    buildFlavor,
+    preload,
+    windows: snapshotWindows,
+    views: snapshotViews,
+    shell,
+    support: supportFrom(runtimeType, electronCompatible, preload, snapshotWindows, snapshotViews),
+  };
 }
 
 export function getRuntimeInfo(opts: RuntimeProbeOptions): CodexRuntimeInfo {
+  const snapshot = probeRuntimeCompatibility(opts);
+  const env = { ...createDefaultProbeEnv(opts), ...opts.env };
   return {
-    type: detectRuntimeType(),
-    codexVersion: opts.codexVersion ?? safeAppVersion(),
+    type: snapshot.runtimeType,
+    codexVersion: snapshot.appVersion,
     channel: opts.channel,
-    buildFlavor: safeBuildFlavor(),
+    buildFlavor: snapshot.buildFlavor,
     usesOwlAppShell: null,
-    appPath: safeAppPath(),
-    resourcesPath: process.resourcesPath ?? null,
+    appPath: safeAppPath(env),
+    resourcesPath: env.resourcesPath ?? null,
   };
 }
 
 export function getRuntimeCapabilities(opts: RuntimeProbeOptions): CodexRuntimeCapabilities {
-  const services = asRecord(opts.getWindowServices());
-  const windowManager = asRecord(services?.windowManager);
+  const snapshot = probeRuntimeCompatibility(opts);
+  const native = opts.getNativeCapabilities?.() ?? defaultNativeCapabilities(opts.env?.platform ?? process.platform);
+  const env = { ...createDefaultProbeEnv(opts), ...opts.env };
+  const canFocus = isFn(asRecord(env.browserWindow)?.fromId) || snapshot.shell.electronCompatible;
+  return capabilitiesFromSnapshot(snapshot, native, canFocus);
+}
+
+export function capabilitiesFromSnapshot(
+  snapshot: RuntimeCompatibilitySnapshot,
+  native: CodexRuntimeCapabilities["native"],
+  canFocus = true,
+): CodexRuntimeCapabilities {
   const cdp = getCdpStatus();
-  const native = opts.getNativeCapabilities?.() ?? defaultNativeCapabilities();
-  const views = opts.getViewCapabilities?.() ?? defaultViewCapabilities();
-  const canCreateWindow = typeof windowManager?.createWindow === "function" ||
-    typeof services?.createFreshWindow === "function" ||
-    typeof services?.createFreshLocalWindow === "function" ||
-    typeof services?.ensureHostWindow === "function";
   return {
     windows: {
-      create: canCreateWindow,
-      focus: true,
-      primary: typeof services?.getPrimaryWindow === "function" ||
-        typeof windowManager?.getPrimaryWindow === "function",
-      browserView: typeof windowManager?.registerWindow === "function",
+      create: snapshot.windows.createWindow,
+      focus: canFocus,
+      primary: snapshot.windows.getPrimaryWindow,
+      browserView: snapshot.windows.registerWindow,
     },
-    views,
+    views: viewsCapabilitiesFromSnapshot(snapshot),
     cdp: {
       supported: true,
       enabled: cdp.enabled,
       port: cdp.port,
     },
     native,
+  };
+}
+
+export function viewsCapabilitiesFromSnapshot(
+  snapshot: RuntimeCompatibilitySnapshot,
+): CodexRuntimeCapabilities["views"] {
+  const privateAttach = snapshot.views.privateViewTree;
+  return {
+    create: privateAttach || snapshot.views.browserView,
+    privateViewTree: privateAttach,
+    webContentsView: snapshot.views.webContentsView,
+    browserViewFallback: snapshot.views.browserView,
   };
 }
 
@@ -90,73 +267,263 @@ export async function listCdpTargets(): Promise<CodexCdpTarget[]> {
   }
 }
 
-function detectRuntimeType(): CodexRuntimeType {
-  if (process.platform === "darwin") {
-    const appRoot = inferMacAppRoot();
-    if (appRoot && existsSync(join(appRoot, "Contents", "Frameworks", "Codex Framework.framework"))) {
+export function selectPreloadRegistration(sessionLike: unknown): PreloadRegistrationStrategy {
+  const session = asRecord(sessionLike);
+  if (isFn(session?.registerPreloadScript)) return "registerPreloadScript";
+  if (isFn(session?.setPreloads)) return "setPreloads";
+  return "unavailable";
+}
+
+export function inspectWindowServices(services: unknown): InspectedWindowServices {
+  const rec = asRecord(services);
+  const windowManager = asRecord(rec?.windowManager);
+  const createWindow = isFn(windowManager?.createWindow);
+  const createFreshWindow = isFn(rec?.createFreshWindow);
+  const createFreshLocalWindow = isFn(rec?.createFreshLocalWindow);
+  const ensureHostWindow = isFn(rec?.ensureHostWindow);
+  const getPrimaryWindow = isFn(rec?.getPrimaryWindow);
+  const getPrimaryWindowFromManager = isFn(windowManager?.getPrimaryWindow);
+  const registerWindow = isFn(windowManager?.registerWindow);
+  return {
+    present: rec !== null,
+    createWindow,
+    createFreshWindow,
+    createFreshLocalWindow,
+    ensureHostWindow,
+    getPrimaryWindow,
+    getPrimaryWindowFromManager,
+    registerWindow,
+    canCreate: createWindow || createFreshWindow || createFreshLocalWindow || ensureHostWindow,
+  };
+}
+
+export function inspectViewAttachTargets(parent: unknown, view?: unknown): ViewAttachTargets {
+  const parentRecord = asRecord(parent);
+  const contentView = asRecord(parentRecord?.contentView);
+  const viewRecord = asRecord(view);
+  const webContentsView = asRecord(viewRecord?.webContentsView);
+  const webContentsViewPresent = Boolean(viewRecord && viewRecord.webContentsView);
+  return {
+    addBrowserView: isFn(parentRecord?.addBrowserView),
+    contentView: contentView !== null,
+    addChildView: isFn(contentView?.addChildView),
+    removeChildView: isFn(contentView?.removeChildView),
+    webContentsView: webContentsViewPresent,
+    webContentsViewSetBounds: isFn(webContentsView?.setBounds) || isFn(viewRecord?.setBounds),
+  };
+}
+
+export function windowSampleFrom(win: unknown): ProbeWindowSample | null {
+  const rec = asRecord(win);
+  if (!rec) return null;
+  const contentView = asRecord(rec.contentView);
+  return {
+    addBrowserView: rec.addBrowserView,
+    fromId: rec.fromId,
+    contentView: rec.contentView,
+    addChildView: contentView?.addChildView,
+    removeChildView: contentView?.removeChildView,
+  };
+}
+
+export function viewSampleFromConstructor(browserView: unknown): ProbeViewSample | null {
+  if (browserView == null) return null;
+  const ctor = asRecord(browserView);
+  const proto = asRecord(ctor?.prototype) ?? (typeof browserView === "object" ? asRecord(Object.getPrototypeOf(browserView)) : null);
+  const webContentsView = proto?.webContentsView ?? ctor?.webContentsView;
+  return {
+    present: typeof browserView === "function" || proto !== null,
+    webContentsView,
+    setBounds: asRecord(webContentsView)?.setBounds ?? proto?.setBounds,
+  };
+}
+
+export function createDefaultProbeEnv(opts?: Pick<RuntimeProbeOptions, "getWindowServices">): RuntimeProbeEnv {
+  const electron = tryRequireElectron();
+  const BrowserWindow = electron?.BrowserWindow;
+  const BrowserView = electron?.BrowserView;
+  return {
+    platform: process.platform,
+    execPath: process.execPath,
+    resourcesPath: process.resourcesPath ?? null,
+    existsSync,
+    processEnv: process.env,
+    app: electron?.app ?? null,
+    session: electron?.session ?? null,
+    browserWindow: BrowserWindow ?? null,
+    browserView: BrowserView ?? null,
+    getWindowServices: opts?.getWindowServices,
+    inspectExistingWindow: () => {
+      try {
+        const focused = BrowserWindow?.getFocusedWindow?.();
+        if (focused) return windowSampleFrom(focused);
+        const windows = BrowserWindow?.getAllWindows?.() ?? [];
+        const live = windows.find((win) => {
+          const isDestroyed = asRecord(win)?.isDestroyed;
+          return typeof isDestroyed !== "function" || !isDestroyed.call(win);
+        });
+        return windowSampleFrom(live ?? null);
+      } catch {
+        return null;
+      }
+    },
+    inspectBrowserView: () => {
+      try {
+        const fromCtor = viewSampleFromConstructor(BrowserView);
+        if (fromCtor?.webContentsView) return fromCtor;
+        const windows = BrowserWindow?.getAllWindows?.() ?? [];
+        for (const win of windows) {
+          const views = asRecord(win)?.getBrowserViews;
+          if (typeof views !== "function") continue;
+          const listed = views.call(win);
+          if (!Array.isArray(listed)) continue;
+          for (const view of listed) {
+            const sample = viewSampleFromInstance(view);
+            if (sample?.webContentsView) return sample;
+          }
+        }
+        return fromCtor;
+      } catch {
+        return viewSampleFromConstructor(BrowserView);
+      }
+    },
+  };
+}
+
+function supportFrom(
+  runtimeType: CodexRuntimeType,
+  electronCompatible: boolean,
+  preload: RuntimeCompatibilitySnapshot["preload"],
+  windows: RuntimeCompatibilitySnapshot["windows"],
+  views: RuntimeCompatibilitySnapshot["views"],
+): RuntimeCompatibilitySnapshot["support"] {
+  const reasons: string[] = [];
+  const hasUsefulCapability =
+    windows.windowServices ||
+    windows.createWindow ||
+    preload.registerPreloadScript ||
+    preload.setPreloadsFallback ||
+    views.browserView ||
+    views.privateViewTree ||
+    electronCompatible;
+
+  if (runtimeType === "unknown" && !hasUsefulCapability) {
+    return { level: "unknown", reasons: ["runtime type and capabilities could not be determined"] };
+  }
+  if (runtimeType === "unknown" && hasUsefulCapability) {
+    reasons.push("runtime type could not be determined");
+  }
+
+  if (!windows.windowServices) reasons.push("window services unavailable");
+  if (!windows.createWindow) reasons.push("createWindow unavailable");
+  if (!preload.registerPreloadScript && preload.setPreloadsFallback) {
+    reasons.push("registerPreloadScript missing; using setPreloads fallback");
+  } else if (!preload.registerPreloadScript && !preload.setPreloadsFallback) {
+    reasons.push("no session preload registration API");
+  }
+  if (!views.privateViewTree && views.browserView) {
+    reasons.push("private contentView unavailable; using BrowserView fallback");
+  } else if (!views.privateViewTree && !views.browserView) {
+    reasons.push("no view attachment surface");
+  }
+
+  const usingFallback =
+    (!preload.registerPreloadScript && preload.setPreloadsFallback) ||
+    (!views.privateViewTree && views.browserView) ||
+    runtimeType === "electron" ||
+    !windows.windowServices ||
+    !windows.createWindow;
+
+  if (runtimeType === "unknown") {
+    return { level: "unknown", reasons };
+  }
+  if (usingFallback) {
+    return { level: "degraded", reasons };
+  }
+  return { level: "supported", reasons: [] };
+}
+
+function detectRuntimeType(env: RuntimeProbeEnv): CodexRuntimeType {
+  const platform = env.platform ?? process.platform;
+  const exists = env.existsSync ?? existsSync;
+  const resourcesPath = env.resourcesPath ?? null;
+  if (platform === "darwin") {
+    const appRoot = inferMacAppRoot(env.execPath ?? process.execPath);
+    if (appRoot && exists(join(appRoot, "Contents", "Frameworks", "Codex Framework.framework"))) {
       return "owl";
     }
-    if (
-      appRoot &&
-      existsSync(join(appRoot, "Contents", "Frameworks", "Electron Framework.framework"))
-    ) {
+    if (appRoot && exists(join(appRoot, "Contents", "Frameworks", "Electron Framework.framework"))) {
       return "electron";
     }
-    if (process.resourcesPath && existsSync(join(process.resourcesPath, "app.asar"))) {
+    if (resourcesPath && exists(join(resourcesPath, "app.asar"))) {
       return "electron";
     }
     return "unknown";
   }
-  return process.resourcesPath && existsSync(join(process.resourcesPath, "app.asar"))
-    ? "electron"
-    : "unknown";
+  return resourcesPath && exists(join(resourcesPath, "app.asar")) ? "electron" : "unknown";
 }
 
-function inferMacAppRoot(): string | null {
+function inferMacAppRoot(execPath: string): string | null {
   const marker = ".app/Contents/MacOS/";
-  const idx = process.execPath.indexOf(marker);
-  return idx >= 0 ? process.execPath.slice(0, idx + ".app".length) : null;
+  const idx = execPath.indexOf(marker);
+  return idx >= 0 ? execPath.slice(0, idx + ".app".length) : null;
 }
 
-function safeAppVersion(): string | null {
-  try {
-    return app.getVersion();
-  } catch {
-    return null;
-  }
+function safeAppPath(env: RuntimeProbeEnv): string | null {
+  const fromApp = safeCall(() => env.app?.getAppPath?.());
+  if (fromApp) return fromApp;
+  return env.resourcesPath ? join(env.resourcesPath, "app.asar") : null;
 }
 
-function safeAppPath(): string | null {
-  try {
-    return app.getAppPath();
-  } catch {
-    return process.resourcesPath ? join(process.resourcesPath, "app.asar") : null;
-  }
-}
-
-function safeBuildFlavor(): string | null {
-  const appPath = safeAppPath();
+function safeBuildFlavor(env: RuntimeProbeEnv, appPath: string | null): string | null {
   if (!appPath) return null;
   const parent = dirname(appPath);
   if (parent.includes("Nightly")) return "nightly";
-  return app.isPackaged ? "prod" : "dev";
+  if (typeof env.app?.isPackaged === "boolean") return env.app.isPackaged ? "prod" : "dev";
+  return null;
 }
 
-function parseCdpPort(value: string | undefined): number {
-  const parsed = Number(value ?? "9222");
-  return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : 9222;
+function defaultSessionFrom(env: RuntimeProbeEnv): ProbeSessionAdapter | null {
+  const session = env.session as { defaultSession?: ProbeSessionAdapter } | ProbeSessionAdapter | null | undefined;
+  if (!session) return null;
+  if ("defaultSession" in session) return asRecord(session.defaultSession) as ProbeSessionAdapter | null;
+  return asRecord(session) as ProbeSessionAdapter | null;
 }
 
-function hasNativeWindowHandles(): boolean {
-  const focused = BrowserWindow.getFocusedWindow();
-  if (focused && typeof focused.getNativeWindowHandle === "function") return true;
-  return typeof BrowserWindow.fromId === "function";
+function windowSampleToParent(sample: ProbeWindowSample | null): unknown {
+  if (!sample) return null;
+  return {
+    addBrowserView: sample.addBrowserView,
+    contentView: sample.contentView ?? (
+      sample.addChildView || sample.removeChildView
+        ? { addChildView: sample.addChildView, removeChildView: sample.removeChildView }
+        : undefined
+    ),
+  };
 }
 
-function defaultNativeCapabilities(): CodexRuntimeCapabilities["native"] {
+function viewSampleToView(sample: ProbeViewSample | null): unknown {
+  if (!sample) return null;
+  return {
+    webContentsView: sample.webContentsView ?? (sample.setBounds ? { setBounds: sample.setBounds } : undefined),
+    setBounds: sample.setBounds,
+  };
+}
+
+function viewSampleFromInstance(view: unknown): ProbeViewSample | null {
+  const rec = asRecord(view);
+  if (!rec) return null;
+  return {
+    present: true,
+    webContentsView: rec.webContentsView,
+    setBounds: asRecord(rec.webContentsView)?.setBounds ?? rec.setBounds,
+  };
+}
+
+function defaultNativeCapabilities(platform: NodeJS.Platform): CodexRuntimeCapabilities["native"] {
   return {
     inProcessModules: true,
-    swiftModules: process.platform === "darwin",
+    swiftModules: platform === "darwin",
     appKitEmbedding: false,
     childWindowOverlay: false,
     directViewAttach: false,
@@ -166,13 +533,9 @@ function defaultNativeCapabilities(): CodexRuntimeCapabilities["native"] {
   };
 }
 
-function defaultViewCapabilities(): CodexRuntimeCapabilities["views"] {
-  return {
-    create: false,
-    privateViewTree: false,
-    webContentsView: false,
-    browserViewFallback: typeof BrowserWindow.fromId === "function",
-  };
+function parseCdpPort(value: string | undefined): number {
+  const parsed = Number(value ?? "9222");
+  return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : 9222;
 }
 
 function normalizeCdpTarget(row: unknown): CodexCdpTarget | null {
@@ -191,6 +554,37 @@ function normalizeCdpTarget(row: unknown): CodexCdpTarget | null {
   };
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
+function tryRequireElectron(): {
+  app?: ProbeAppAdapter;
+  session?: { defaultSession?: ProbeSessionAdapter };
+  BrowserWindow?: RuntimeProbeEnv["browserWindow"];
+  BrowserView?: unknown;
+} | null {
+  try {
+    return require("electron") as {
+      app?: ProbeAppAdapter;
+      session?: { defaultSession?: ProbeSessionAdapter };
+      BrowserWindow?: RuntimeProbeEnv["browserWindow"];
+      BrowserView?: unknown;
+    };
+  } catch {
+    return null;
+  }
+}
+
+function safeCall<T>(fn: () => T): T | null {
+  try {
+    const value = fn();
+    return value === undefined ? null : value;
+  } catch {
+    return null;
+  }
+}
+
+function isFn(value: unknown): boolean {
+  return typeof value === "function";
+}
+
+export function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
