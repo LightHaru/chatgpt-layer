@@ -242,7 +242,7 @@ Trusted executable search is a conservative relative list under
 
 ## 17. Backward compatibility
 
-- Version stays `1.1.4`.
+- Version stays `1.1.5`.
 - Existing `api.codex` fields remain required.
 - No sessions are created at boot, so ChatGPT single-session behavior is unchanged.
 - `codex-sessions/` is absent until something creates a session.

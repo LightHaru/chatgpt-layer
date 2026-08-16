@@ -11,7 +11,7 @@ export declare const INSTALLER_STATE_FILE: string;
 export declare const UPDATE_MODE_FILE: string;
 export declare const SELF_UPDATE_STATE_FILE: string;
 export declare const SIGNED_CODEX_BACKUP: string;
-export declare const CODEX_PLUSPLUS_VERSION = "1.1.4";
+export declare const CODEX_PLUSPLUS_VERSION = "1.1.5";
 export declare const CODEX_PLUSPLUS_REPO = "LightHaru/chatgpt-layer";
 export declare const TWEAK_STORE_INDEX_URL: string;
 export declare const CODEX_WINDOW_SERVICES_KEY = "__codexpp_window_services__";
