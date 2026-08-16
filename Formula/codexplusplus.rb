@@ -1,8 +1,10 @@
+# ChatGPT Layer (unofficial ChatGPT desktop tweak loader).
+# Class name Codexplusplus is kept so existing Homebrew taps continue to work.
 class Codexplusplus < Formula
-  desc "Tweak system for the OpenAI Codex desktop app"
-  homepage "https://github.com/b-nnett/codex-plusplus"
-  url "https://github.com/b-nnett/codex-plusplus.git",
-      tag: "v0.1.5"
+  desc "ChatGPT Layer (unofficial ChatGPT desktop tweak loader)"
+  homepage "https://github.com/LightHaru/chatgpt-layer"
+  url "https://github.com/LightHaru/chatgpt-layer.git",
+      tag: "v1.1.3"
   license "MIT"
 
   depends_on "node"
@@ -25,13 +27,13 @@ class Codexplusplus < Formula
 
   def caveats
     <<~EOS
-      Run `codexplusplus install` to patch Codex.app.
-      Run `codexplusplus update` to update Codex++ from GitHub source.
+      Run `codexplusplus install` to patch the ChatGPT desktop app.
+      Run `codexplusplus update` to update ChatGPT Layer from GitHub source.
     EOS
   end
 
   test do
-    assert_match(/codex-plusplus, \d+\.\d+\.\d+/, shell_output("#{bin}/codexplusplus --version"))
-    assert_match(/codex-plusplus, \d+\.\d+\.\d+/, shell_output("#{bin}/codex-plusplus --version"))
+    assert_match(/chatgpt-layer, \d+\.\d+\.\d+/, shell_output("#{bin}/codexplusplus --version"))
+    assert_match(/chatgpt-layer, \d+\.\d+\.\d+/, shell_output("#{bin}/codex-plusplus --version"))
   end
 end
