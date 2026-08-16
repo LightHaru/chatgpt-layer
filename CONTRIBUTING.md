@@ -8,7 +8,7 @@ npm run build
 npm run audit
 ```
 
-The installer package is `packages/installer` and publishes the `codex-plusplus` CLI. Runtime code lives in `packages/runtime`; public tweak author types live in `packages/sdk`.
+The installer package is `packages/installer` and publishes the `chatgpt-layer` CLI (`cgl`, `codexplusplus`, and `codex-plusplus` remain aliases). Runtime code lives in `packages/runtime`; public tweak author types live in `packages/sdk`.
 
 Default tweaks are developed and released from their own repositories. First-run store/tweak install uses the `approvedCommitSha` in `store/index.json`, not the latest GitHub release tag; do not vendor their source into this repository.
 

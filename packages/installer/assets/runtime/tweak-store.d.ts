@@ -1,6 +1,10 @@
 import type { TweakManifest } from "@codex-plusplus/sdk";
-export declare const DEFAULT_TWEAK_STORE_INDEX_URL = "https://b-nnett.github.io/codex-plusplus/store/index.json";
-export declare const TWEAK_STORE_REVIEW_ISSUE_URL = "https://github.com/b-nnett/codex-plusplus/issues/new";
+/** Commit of store/index.json reviewed into this runtime. Not floating main. */
+export declare const PINNED_TWEAK_STORE_INDEX_COMMIT = "7a0e95b161de5480261f17bbf84004d9be90dc6e";
+/** SHA-256 of store/index.json at PINNED_TWEAK_STORE_INDEX_COMMIT. */
+export declare const PINNED_TWEAK_STORE_INDEX_SHA256 = "378e88cc366ef6d50816a27838af146c34fef122c6bfee3ba03c9549b862d063";
+export declare const DEFAULT_TWEAK_STORE_INDEX_URL = "https://raw.githubusercontent.com/LightHaru/chatgpt-layer/7a0e95b161de5480261f17bbf84004d9be90dc6e/store/index.json";
+export declare const TWEAK_STORE_REVIEW_ISSUE_URL = "https://github.com/LightHaru/chatgpt-layer/issues/new";
 export interface TweakStoreRegistry {
     schemaVersion: 1;
     generatedAt?: string;
@@ -38,3 +42,7 @@ export declare function normalizeStoreEntry(input: unknown): TweakStoreEntry;
 export declare function storeArchiveUrl(entry: TweakStoreEntry): string;
 export declare function buildTweakPublishIssueUrl(submission: TweakStorePublishSubmission): string;
 export declare function isFullCommitSha(value: string): boolean;
+export declare function resolveTweakStoreIndexUrl(env?: NodeJS.Dict<string | undefined>): string;
+export declare function assertStoreInstallPin(entry: TweakStoreEntry, commitSha: string): void;
+export declare function shortCommitSha(sha: string): string;
+export declare function listedPinLabel(sha: string): string;

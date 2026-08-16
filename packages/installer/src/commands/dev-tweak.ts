@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { platform } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { validateTweakManifest, type TweakManifest } from "@codex-plusplus/sdk";
+import { validateTweakManifest, type TweakManifest } from "../bundled-sdk.js";
 import { ensureUserPaths } from "../paths.js";
 
 interface DevTweakOpts {

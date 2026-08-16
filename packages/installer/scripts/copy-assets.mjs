@@ -1,9 +1,10 @@
-// Copies the loader stub + bundled runtime/manager into installer/assets/
-// so the published npm package can extract them at install time.
+import "./bundle-sdk.mjs";
 import { cpSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Copies the loader stub + bundled runtime into installer/assets so the
+// published package can extract them at install time.
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..", "..", "..");
 const out = resolve(here, "..", "assets");

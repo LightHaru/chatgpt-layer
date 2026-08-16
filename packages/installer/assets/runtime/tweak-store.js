@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TWEAK_STORE_REVIEW_ISSUE_URL = exports.DEFAULT_TWEAK_STORE_INDEX_URL = void 0;
+exports.TWEAK_STORE_REVIEW_ISSUE_URL = exports.DEFAULT_TWEAK_STORE_INDEX_URL = exports.PINNED_TWEAK_STORE_INDEX_SHA256 = exports.PINNED_TWEAK_STORE_INDEX_COMMIT = void 0;
 exports.normalizeGitHubRepo = normalizeGitHubRepo;
 exports.normalizeStoreRegistry = normalizeStoreRegistry;
 exports.shuffleStoreEntries = shuffleStoreEntries;
@@ -8,8 +8,16 @@ exports.normalizeStoreEntry = normalizeStoreEntry;
 exports.storeArchiveUrl = storeArchiveUrl;
 exports.buildTweakPublishIssueUrl = buildTweakPublishIssueUrl;
 exports.isFullCommitSha = isFullCommitSha;
-exports.DEFAULT_TWEAK_STORE_INDEX_URL = "https://b-nnett.github.io/codex-plusplus/store/index.json";
-exports.TWEAK_STORE_REVIEW_ISSUE_URL = "https://github.com/b-nnett/codex-plusplus/issues/new";
+exports.resolveTweakStoreIndexUrl = resolveTweakStoreIndexUrl;
+exports.assertStoreInstallPin = assertStoreInstallPin;
+exports.shortCommitSha = shortCommitSha;
+exports.listedPinLabel = listedPinLabel;
+/** Commit of store/index.json reviewed into this runtime. Not floating main. */
+exports.PINNED_TWEAK_STORE_INDEX_COMMIT = "7a0e95b161de5480261f17bbf84004d9be90dc6e";
+/** SHA-256 of store/index.json at PINNED_TWEAK_STORE_INDEX_COMMIT. */
+exports.PINNED_TWEAK_STORE_INDEX_SHA256 = "378e88cc366ef6d50816a27838af146c34fef122c6bfee3ba03c9549b862d063";
+exports.DEFAULT_TWEAK_STORE_INDEX_URL = `https://raw.githubusercontent.com/LightHaru/chatgpt-layer/${exports.PINNED_TWEAK_STORE_INDEX_COMMIT}/store/index.json`;
+exports.TWEAK_STORE_REVIEW_ISSUE_URL = "https://github.com/LightHaru/chatgpt-layer/issues/new";
 const GITHUB_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const FULL_SHA_RE = /^[a-f0-9]{40}$/i;
 function normalizeGitHubRepo(input) {
@@ -152,5 +160,26 @@ function optionalGithubUrl(value) {
     if (url.protocol !== "https:" || url.hostname !== "github.com")
         return undefined;
     return url.toString();
+}
+function resolveTweakStoreIndexUrl(env = process.env) {
+    const override = env.CODEX_PLUSPLUS_STORE_INDEX_URL?.trim();
+    if (override) {
+        if (env.CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE !== "1") {
+            throw new Error("CODEX_PLUSPLUS_STORE_INDEX_URL override requires CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE=1");
+        }
+        return override;
+    }
+    return exports.DEFAULT_TWEAK_STORE_INDEX_URL;
+}
+function assertStoreInstallPin(entry, commitSha) {
+    if (entry.approvedCommitSha.toLowerCase() !== commitSha.toLowerCase()) {
+        throw new Error(`Refusing to install ${entry.id} at ${commitSha}; store pin is ${entry.approvedCommitSha}`);
+    }
+}
+function shortCommitSha(sha) {
+    return sha.slice(0, 7);
+}
+function listedPinLabel(sha) {
+    return `Listed · pinned ${shortCommitSha(sha)}`;
 }
 //# sourceMappingURL=tweak-store.js.map

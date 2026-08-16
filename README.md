@@ -51,6 +51,8 @@ Unofficial. Not affiliated with OpenAI.
 
 ## Install <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
 
+**CLI package:** `chatgpt-layer` on the public registry (Node.js 20+). After installing that package, run the `install` subcommand. Aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
+
 The one-liners fetch the installer script from `main` (fail-closed lockfile). That script then pins the downloaded source to tag `v1.1.4` unless `CODEX_PLUSPLUS_REF` is set.
 
 <p>
@@ -253,6 +255,8 @@ Không chính thức. Không liên kết với OpenAI.
 | <img alt="security pin" src="https://img.shields.io/badge/security%20pin-111827?style=flat-square"> | **Update** / **Install** trên Store chỉ cài `approvedCommitSha` đã ghim trong `store/index.json` (1.1.3). GitHub Release mới có thể hiện badge; nút không kéo tag latest chưa ghim. |
 
 ## Cài đặt <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
+
+**Gói CLI:** `chatgpt-layer` trên registry công khai (Node.js 20+). Sau khi cài gói đó, chạy subcommand `install`. Alias: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
 
 One-liner lấy script cài từ `main` (lockfile fail-closed). Script đó ghim source tải về tag `v1.1.4` trừ khi đặt `CODEX_PLUSPLUS_REF`.
 

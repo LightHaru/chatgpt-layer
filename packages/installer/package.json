@@ -1,7 +1,9 @@
 {
-  "name": "codex-plusplus",
+  "name": "chatgpt-layer",
   "version": "1.1.4",
-  "description": "Installer CLI for ChatGPT Layer (based on Codex++)",
+  "description": "Installer CLI for ChatGPT Layer, a local tweak system for the ChatGPT desktop app. Unofficial, not affiliated with OpenAI.",
+  "author": "LightHaru",
+  "keywords": ["chatgpt", "cli", "installer", "tweaks", "electron", "codex"],
   "type": "module",
   "repository": {
     "type": "git",
@@ -13,10 +15,10 @@
   },
   "homepage": "https://github.com/LightHaru/chatgpt-layer#readme",
   "bin": {
-    "codexplusplus": "dist/cli.js",
-    "codex-plusplus": "dist/cli.js",
     "chatgpt-layer": "dist/cli.js",
-    "cgl": "dist/cli.js"
+    "cgl": "dist/cli.js",
+    "codexplusplus": "dist/cli.js",
+    "codex-plusplus": "dist/cli.js"
   },
   "main": "dist/cli.js",
   "files": [
@@ -27,11 +29,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run copy-assets",
+    "bundle-sdk": "node ./scripts/bundle-sdk.mjs",
     "copy-assets": "node ./scripts/copy-assets.mjs",
     "dev": "tsx src/cli.ts"
   },
   "dependencies": {
-    "@codex-plusplus/sdk": "*",
     "@electron/asar": "^3.4.0",
     "kleur": "^4.1.5",
     "plist": "^3.1.0",
@@ -43,11 +45,15 @@
     "@types/plist": "^3.0.5",
     "@types/prompts": "^2.4.9",
     "@types/tar": "^6.1.13",
+    "esbuild": "^0.28.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "license": "MIT",
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,7 +1,7 @@
 import kleur from "kleur";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { validateTweakManifest, type TweakManifest } from "@codex-plusplus/sdk";
+import { validateTweakManifest, type TweakManifest } from "../bundled-sdk.js";
 
 const ENTRY_CANDIDATES = ["index.js", "index.cjs", "index.mjs"];
 

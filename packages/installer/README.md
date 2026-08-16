@@ -1,4 +1,12 @@
-# ChatGPT Layer
+# ChatGPT Layer CLI
+
+Unofficial. Not affiliated with OpenAI.
+
+Requires Node.js 20+.
+
+CLI aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
+
+Published package name: `chatgpt-layer`. After installing that package, run the `install` subcommand.
 
 Installer CLI for ChatGPT Layer, a local tweak system for the ChatGPT desktop app.
 
