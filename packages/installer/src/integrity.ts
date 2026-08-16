@@ -19,14 +19,28 @@ export function getIntegrity(install: CodexInstall): IntegrityEntry | null {
   return block["Resources/app.asar"] ?? null;
 }
 
+export function canWriteAsarIntegrity(platform: CodexInstall["platform"] | string): boolean {
+  return platform === "darwin";
+}
+
+export function integrityWriterReport(platform: CodexInstall["platform"] | string): {
+  ok: true | "warn";
+  detail: string;
+} {
+  if (canWriteAsarIntegrity(platform)) {
+    return { ok: true, detail: "macOS Info.plist ElectronAsarIntegrity writer available" };
+  }
+  return {
+    ok: "warn",
+    detail:
+      "Win/Linux asar integrity writer is unimplemented; EnableEmbeddedAsarIntegrityValidation is left ON. PE/Linux sidecar writer deferred.",
+  };
+}
+
 export function setIntegrity(install: CodexInstall, hash: string): void {
-  if (install.platform !== "darwin" || !install.metaPath) {
-    // TODO(win/linux): On Windows, integrity is stored in PE resources of
-    // the main exe and read by the framework; on Linux it's in
-    // `resources/electron-asar-integrity.txt` (varies by Electron version).
-    // We rely on the fuse flip there, which makes integrity validation a
-    // no-op. If you re-enable integrity on those platforms, this needs
-    // platform-specific writers.
+  if (!canWriteAsarIntegrity(install.platform) || !install.metaPath) {
+    // TODO(win/linux): PE resource / electron-asar-integrity sidecar writers.
+    // Do not disable EnableEmbeddedAsarIntegrityValidation as a substitute.
     return;
   }
   const pl = readPlist(install.metaPath);

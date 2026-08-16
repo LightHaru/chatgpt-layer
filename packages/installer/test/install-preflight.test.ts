@@ -154,10 +154,12 @@ test("install refreshes full app backup only for unpatched apps", () => {
 test("install skips Electron fuse flipping when the framework binary is missing", () => {
   withTempDir((root) => {
     const electronBinary = join(root, "Electron Framework");
-    assert.equal(shouldFlipElectronFuse({ electronBinary }, true), false);
+    assert.equal(shouldFlipElectronFuse({ electronBinary, platform: "darwin" }, true), false);
     writeFileSync(electronBinary, "");
-    assert.equal(shouldFlipElectronFuse({ electronBinary }, true), true);
-    assert.equal(shouldFlipElectronFuse({ electronBinary }, false), false);
+    assert.equal(shouldFlipElectronFuse({ electronBinary, platform: "darwin" }, true), true);
+    assert.equal(shouldFlipElectronFuse({ electronBinary, platform: "darwin" }, false), false);
+    assert.equal(shouldFlipElectronFuse({ electronBinary, platform: "win32" }, true), false);
+    assert.equal(shouldFlipElectronFuse({ electronBinary, platform: "linux" }, true), false);
   });
 });
 

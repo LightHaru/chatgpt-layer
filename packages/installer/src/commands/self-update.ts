@@ -24,6 +24,11 @@ import {
   type SelfUpdateState,
   writeSelfUpdateState,
 } from "../self-update-state.js";
+import {
+  allowUnpinnedInstall,
+  assertPinnedInstallRef,
+  isLayerAutoUpdateEnabled,
+} from "../release-pin.js";
 
 interface Opts {
   repo?: string;
@@ -89,7 +94,7 @@ export async function selfUpdate(opts: Opts = {}): Promise<void> {
 
   try {
     try {
-      if (opts.watcher && config.autoUpdate === false) {
+      if (opts.watcher && !isLayerAutoUpdateEnabled(config.autoUpdate)) {
         writeSelfUpdateState(paths.selfUpdateStateFile, selfUpdateState({
           status: "disabled",
           repo,
@@ -181,6 +186,7 @@ async function resolveUpdateTarget(
   const explicitRef =
     opts.ref ?? process.env.CODEX_PLUSPLUS_REF ?? (config.updateChannel === "custom" ? config.updateRef : undefined);
   if (explicitRef) {
+    assertPinnedInstallRef(explicitRef, allowUnpinnedInstall());
     return {
       ref: explicitRef,
       version: releaseVersionFromTag(explicitRef),
@@ -316,13 +322,12 @@ function selfUpdateState(opts: {
 }
 
 function installDependencies(cwd: string, opts: RunOptions = {}): void {
-  if (existsSync(join(cwd, "package-lock.json"))) {
-    const ci = runMaybe(npmCommand(), ["ci", "--workspaces", "--include-workspace-root", "--ignore-scripts"], cwd, opts);
-    if (ci.status === 0) return;
-    if (!opts.quiet) console.warn(kleur.yellow("npm ci failed; regenerating lockfile for downloaded source."));
-    rmSync(join(cwd, "package-lock.json"), { force: true });
+  if (!existsSync(join(cwd, "package-lock.json"))) {
+    throw new Error("lockfile required");
   }
-  run(npmCommand(), ["install", "--workspaces", "--include-workspace-root", "--ignore-scripts"], cwd, opts);
+  const ci = runMaybe(npmCommand(), ["ci", "--workspaces", "--include-workspace-root", "--ignore-scripts"], cwd, opts);
+  if (ci.status === 0) return;
+  throw new Error("dependency install failed");
 }
 
 function npmCommand(): string {
@@ -415,12 +420,12 @@ function rollbackSource(sourceRoot: string, previous: string): void {
 }
 
 function isAutoUpdateEnabled(configFile: string): boolean {
-  if (!existsSync(configFile)) return true;
+  if (!existsSync(configFile)) return false;
   try {
     const config = JSON.parse(readFileSync(configFile, "utf8")) as RuntimeConfig;
-    return config.codexPlusPlus?.autoUpdate !== false;
+    return isLayerAutoUpdateEnabled(config.codexPlusPlus?.autoUpdate);
   } catch {
-    return true;
+    return false;
   }
 }
 

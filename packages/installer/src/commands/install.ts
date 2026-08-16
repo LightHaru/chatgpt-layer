@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { locateCodex, type CodexInstall } from "../platform.js";
 import { ensureUserPaths } from "../paths.js";
 import { backupOnce, patchAsar, readFileInAsar, readHeaderHash } from "../asar.js";
-import { setIntegrity, getIntegrity } from "../integrity.js";
+import { setIntegrity, getIntegrity, canWriteAsarIntegrity } from "../integrity.js";
 import { writeFuse } from "../fuses.js";
 import { clearQuarantine, prepareCodeSigning, signCodexApp, signatureInfo } from "../codesign.js";
 import { readPlist } from "../plist.js";
@@ -122,7 +122,7 @@ export async function install(opts: Opts = {}): Promise<void> {
     step.detail(`Updated ElectronAsarIntegrity → ${kleur.dim(patchedAsarHash.slice(0, 12))}…`);
   }
 
-  // 5. Belt-and-suspenders: flip the integrity validation fuse off.
+  // 5. Only flip the integrity fuse off on platforms where we can rewrite the hash (macOS).
   let fuseFlipped = false;
   if (fuseFlip) {
     try {
@@ -226,10 +226,13 @@ export function readCodexVersion(metaPath: string | null): string | null {
 }
 
 export function shouldFlipElectronFuse(
-  codex: Pick<CodexInstall, "electronBinary">,
+  codex: Pick<CodexInstall, "electronBinary" | "platform">,
   requested: boolean,
 ): boolean {
-  return requested && existsSync(codex.electronBinary);
+  if (!requested || !existsSync(codex.electronBinary)) return false;
+  // Win/Linux writers are no-ops; keep EnableEmbeddedAsarIntegrityValidation ON.
+  if (!canWriteAsarIntegrity(codex.platform ?? "darwin")) return false;
+  return true;
 }
 
 export function shouldBackupUnpatchedApp(input: { hasPatchMarker: boolean; signature: ReturnType<typeof signatureInfo> }): boolean {

@@ -1,7 +1,13 @@
+import { createHash } from "node:crypto";
 import type { TweakManifest } from "@codex-plusplus/sdk";
 
+/** Commit of store/index.json reviewed into this runtime. Not floating main. */
+export const PINNED_TWEAK_STORE_INDEX_COMMIT = "7a0e95b161de5480261f17bbf84004d9be90dc6e";
+/** SHA-256 of store/index.json at PINNED_TWEAK_STORE_INDEX_COMMIT. */
+export const PINNED_TWEAK_STORE_INDEX_SHA256 =
+  "378e88cc366ef6d50816a27838af146c34fef122c6bfee3ba03c9549b862d063";
 export const DEFAULT_TWEAK_STORE_INDEX_URL =
-  "https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/store/index.json";
+  `https://raw.githubusercontent.com/LightHaru/chatgpt-layer/${PINNED_TWEAK_STORE_INDEX_COMMIT}/store/index.json`;
 export const TWEAK_STORE_REVIEW_ISSUE_URL =
   "https://github.com/LightHaru/chatgpt-layer/issues/new";
 
@@ -187,4 +193,47 @@ function optionalGithubUrl(value: unknown): string | undefined {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.hostname !== "github.com") return undefined;
   return url.toString();
+}
+
+export function resolveTweakStoreIndexUrl(env: NodeJS.Dict<string | undefined> = process.env): string {
+  const override = env.CODEX_PLUSPLUS_STORE_INDEX_URL?.trim();
+  if (override) {
+    if (env.CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE !== "1") {
+      throw new Error(
+        "CODEX_PLUSPLUS_STORE_INDEX_URL override requires CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE=1",
+      );
+    }
+    return override;
+  }
+  return DEFAULT_TWEAK_STORE_INDEX_URL;
+}
+
+export function hashStoreIndex(body: string | Buffer): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+export function assertStoreIndexMatchesPin(
+  body: string | Buffer,
+  expectedSha256 = PINNED_TWEAK_STORE_INDEX_SHA256,
+): void {
+  const hash = hashStoreIndex(body);
+  if (hash !== expectedSha256) {
+    throw new Error(`Store index hash ${hash} does not match runtime pin ${expectedSha256}`);
+  }
+}
+
+export function assertStoreInstallPin(entry: TweakStoreEntry, commitSha: string): void {
+  if (entry.approvedCommitSha.toLowerCase() !== commitSha.toLowerCase()) {
+    throw new Error(
+      `Refusing to install ${entry.id} at ${commitSha}; store pin is ${entry.approvedCommitSha}`,
+    );
+  }
+}
+
+export function shortCommitSha(sha: string): string {
+  return sha.slice(0, 7);
+}
+
+export function listedPinLabel(sha: string): string {
+  return `Listed · pinned ${shortCommitSha(sha)}`;
 }

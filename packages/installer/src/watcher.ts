@@ -287,7 +287,6 @@ function cliShellCommand(command: string, args: string[] = []): string {
 export function watcherShellScript(logPath?: string): string {
   const commands = [
     "sleep 3",
-    `${cliShellCommand("update", ["--watcher", "--quiet", "--no-repair"])} || true`,
     `${cliShellCommand("repair", ["--watcher", "--quiet"])} || true`,
   ];
   if (logPath) commands.unshift(`: > ${shellSingleQuote(logPath)}`);
@@ -338,7 +337,6 @@ function windowsWatcherTaskCommand(): string {
     [
       "@echo off",
       "set CODEX_PLUSPLUS_WATCHER=1",
-      `${windowsCommand("update", ["--watcher", "--quiet", "--no-repair"])}`,
       `${windowsCommand("repair", ["--watcher", "--quiet"])}`,
       "exit /b 0",
       "",
