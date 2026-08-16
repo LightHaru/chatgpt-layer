@@ -4,6 +4,12 @@ All notable changes to ChatGPT Layer are documented here. The project is based o
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
 
+## Unreleased
+
+### Security
+
+- Enforce `TweakManifest.permissions` end-to-end as capability authorization (least privilege), not a process sandbox. Absent permissions stay legacy; a present list is strict; `[]` grants no optional capabilities. Historical `codex.windows` / `codex.views` aliases are preserved.
+
 ## 1.1.4
 
 Release notes: [docs/releases/1.1.4.md](docs/releases/1.1.4.md)

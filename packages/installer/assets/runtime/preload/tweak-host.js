@@ -18,6 +18,7 @@ exports.teardownTweakHost = teardownTweakHost;
 const electron_1 = require("electron");
 const settings_injector_1 = require("./settings-injector");
 const react_hook_1 = require("./react-hook");
+const tweak_permissions_1 = require("../tweak-permissions");
 const loaded = new Map();
 let cachedPaths = null;
 async function startTweakHost() {
@@ -92,8 +93,21 @@ async function loadTweak(t, paths) {
     await tweak.start(api);
     loaded.set(t.manifest.id, { stop: tweak.stop?.bind(tweak) });
 }
-function makeRendererApi(manifest, paths) {
+function rendererIpcBridge() {
+    return {
+        on: (channel, listener) => {
+            electron_1.ipcRenderer.on(channel, listener);
+        },
+        removeListener: (channel, listener) => {
+            electron_1.ipcRenderer.removeListener(channel, listener);
+        },
+        send: (channel, ...args) => electron_1.ipcRenderer.send(channel, ...args),
+        invoke: (channel, ...args) => electron_1.ipcRenderer.invoke(channel, ...args),
+    };
+}
+function makeRendererApi(manifest, _paths) {
     const id = manifest.id;
+    const plan = (0, tweak_permissions_1.planTweakApi)(manifest);
     const log = (level, ...a) => {
         const consoleFn = level === "debug" ? console.debug
             : level === "warn" ? console.warn
@@ -121,7 +135,7 @@ function makeRendererApi(manifest, paths) {
             /* swallow — never let logging break a tweak */
         }
     };
-    return {
+    const api = {
         manifest,
         process: "renderer",
         log: {
@@ -131,10 +145,6 @@ function makeRendererApi(manifest, paths) {
             error: (...a) => log("error", ...a),
         },
         storage: rendererStorage(id),
-        settings: {
-            register: (s) => (0, settings_injector_1.registerSection)({ ...s, id: `${id}:${s.id}` }),
-            registerPage: (p) => (0, settings_injector_1.registerPage)(id, manifest, { ...p, id: `${id}:${p.id}` }),
-        },
         react: {
             getFiber: (n) => (0, react_hook_1.fiberForNode)(n),
             findOwnerByName: (n, name) => {
@@ -166,71 +176,106 @@ function makeRendererApi(manifest, paths) {
                 obs.observe(document.documentElement, { childList: true, subtree: true });
             }),
         },
-        ipc: {
-            on: (c, h) => {
-                const wrapped = (_e, ...args) => h(...args);
-                electron_1.ipcRenderer.on(`codexpp:${id}:${c}`, wrapped);
-                return () => electron_1.ipcRenderer.removeListener(`codexpp:${id}:${c}`, wrapped);
-            },
-            send: (c, ...args) => electron_1.ipcRenderer.send(`codexpp:${id}:${c}`, ...args),
-            invoke: (c, ...args) => electron_1.ipcRenderer.invoke(`codexpp:${id}:${c}`, ...args),
-        },
-        fs: rendererFs(id, paths),
-        codex: rendererCodexApi(id),
+        ipc: plan.ipc === "present" ? (0, tweak_permissions_1.createBoundTweakIpc)(id, rendererIpcBridge()) : (0, tweak_permissions_1.createDeniedTweakIpc)(id),
+        fs: plan.fs === "present"
+            ? (0, tweak_permissions_1.createBoundTweakFs)(id, (channel, ...args) => electron_1.ipcRenderer.invoke(channel, ...args))
+            : (0, tweak_permissions_1.createDeniedTweakFs)(id),
     };
+    if (plan.settings === "present") {
+        api.settings = {
+            register: (s) => (0, settings_injector_1.registerSection)({ ...s, id: `${id}:${s.id}` }),
+            registerPage: (p) => (0, settings_injector_1.registerPage)(id, manifest, { ...p, id: `${id}:${p.id}` }),
+        };
+    }
+    if (plan.codex === "present") {
+        api.codex = rendererCodexApi(id, manifest);
+    }
+    return api;
 }
-function rendererCodexApi(tweakId) {
+function rendererCodexApi(tweakId, manifest) {
+    const surface = (0, tweak_permissions_1.tweakApiSurface)(manifest);
+    const deny = (permission) => (0, tweak_permissions_1.createDeniedAsyncMethod)(tweakId, permission);
     return {
         runtime: {
-            getInfo: async () => {
-                const info = await electron_1.ipcRenderer.invoke("codexpp:codex-runtime-info");
-                const bridge = rendererElectronBridge();
-                return {
-                    ...info,
-                    buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
-                    usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
-                };
-            },
-            getCapabilities: () => electron_1.ipcRenderer.invoke("codexpp:codex-runtime-capabilities"),
+            getInfo: surface.codexRuntime
+                ? async () => {
+                    const info = await electron_1.ipcRenderer.invoke("codexpp:codex-runtime-info", tweakId);
+                    const bridge = rendererElectronBridge();
+                    return {
+                        ...info,
+                        buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
+                        usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
+                    };
+                }
+                : deny("codex-runtime"),
+            getCapabilities: surface.codexRuntime
+                ? () => electron_1.ipcRenderer.invoke("codexpp:codex-runtime-capabilities", tweakId)
+                : deny("codex-runtime"),
         },
         windows: {
-            create: (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", options),
-            getPrimary: () => electron_1.ipcRenderer.invoke("codexpp:codex-window-primary"),
-            focus: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-focus", windowId),
-            show: (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-show", windowId),
+            create: surface.codexWindows
+                ? (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options)
+                : deny("codex-windows"),
+            getPrimary: surface.codexWindows
+                ? () => electron_1.ipcRenderer.invoke("codexpp:codex-window-primary", tweakId)
+                : deny("codex-windows"),
+            focus: surface.codexWindows
+                ? (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-focus", tweakId, windowId)
+                : deny("codex-windows"),
+            show: surface.codexWindows
+                ? (windowId) => electron_1.ipcRenderer.invoke("codexpp:codex-window-show", tweakId, windowId)
+                : deny("codex-windows"),
         },
         views: {
-            create: async (options) => {
-                const ref = await electron_1.ipcRenderer.invoke("codexpp:codex-view-create", tweakId, options);
-                return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
-            },
+            create: surface.codexViews
+                ? async (options) => {
+                    const ref = await electron_1.ipcRenderer.invoke("codexpp:codex-view-create", tweakId, options);
+                    return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
+                }
+                : deny("codex-views"),
         },
         cdp: {
-            getStatus: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-status"),
-            listTargets: () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-targets"),
+            getStatus: surface.codexCdp
+                ? () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-status", tweakId)
+                : deny("codex-cdp"),
+            listTargets: surface.codexCdp
+                ? () => electron_1.ipcRenderer.invoke("codexpp:codex-cdp-targets", tweakId)
+                : deny("codex-cdp"),
         },
         native: {
-            loadModule: async (options) => {
-                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-load-module", tweakId, options);
-                return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
-            },
-            createPanel: async (options) => {
-                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-create-panel", tweakId, options);
-                return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
-            },
-            attachView: async (options) => {
-                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-attach-view", tweakId, options);
-                return rendererNativeViewRef(tweakId, ref.id);
-            },
-            launchHelper: async (options) => {
-                const ref = await electron_1.ipcRenderer.invoke("codexpp:native-launch-helper", tweakId, options);
-                return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
-            },
+            loadModule: surface.nativeModule
+                ? async (options) => {
+                    const ref = await electron_1.ipcRenderer.invoke("codexpp:native-load-module", tweakId, options);
+                    return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
+                }
+                : deny("native-module"),
+            createPanel: surface.nativeView
+                ? async (options) => {
+                    const ref = await electron_1.ipcRenderer.invoke("codexpp:native-create-panel", tweakId, options);
+                    return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
+                }
+                : deny("native-view"),
+            attachView: surface.nativeView
+                ? async (options) => {
+                    const ref = await electron_1.ipcRenderer.invoke("codexpp:native-attach-view", tweakId, options);
+                    return rendererNativeViewRef(tweakId, ref.id);
+                }
+                : deny("native-view"),
+            launchHelper: surface.nativeHelper
+                ? async (options) => {
+                    const ref = await electron_1.ipcRenderer.invoke("codexpp:native-launch-helper", tweakId, options);
+                    return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
+                }
+                : deny("native-helper"),
         },
-        createBrowserView: (_options) => {
-            throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
-        },
-        createWindow: (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", options),
+        createBrowserView: surface.codexViews
+            ? (_options) => {
+                throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
+            }
+            : deny("codex-views"),
+        createWindow: surface.codexWindows
+            ? (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options)
+            : deny("codex-windows"),
     };
 }
 function rendererCodexViewRef(tweakId, id, webContentsId, parentWindowId) {
@@ -309,15 +354,6 @@ function rendererStorage(id) {
             write(o);
         },
         all: () => read(),
-    };
-}
-function rendererFs(id, _paths) {
-    // Sandboxed renderer can't use Node fs directly — proxy through main IPC.
-    return {
-        dataDir: `<remote>/tweak-data/${id}`,
-        read: (p) => electron_1.ipcRenderer.invoke("codexpp:tweak-fs", "read", id, p),
-        write: (p, c) => electron_1.ipcRenderer.invoke("codexpp:tweak-fs", "write", id, p, c),
-        exists: (p) => electron_1.ipcRenderer.invoke("codexpp:tweak-fs", "exists", id, p),
     };
 }
 //# sourceMappingURL=tweak-host.js.map

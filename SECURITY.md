@@ -28,3 +28,17 @@ Before updating a tweak, review the pinned commit, release notes, changed files,
 ## Runtime Boundaries
 
 Renderer tweaks run in the preload context and can modify the Codex UI. Main-process tweaks can use the main-process API exposed by Codex++. Install only tweaks from sources you trust.
+
+## Tweak Permission Enforcement
+
+`manifest.permissions` is capability authorization (least privilege) for optional tweak APIs. It is **not** a process sandbox, network jail, or OS isolation. Tweaks are still local code in the Codex renderer preload and/or Electron main process.
+
+Policy:
+
+1. **permissions absent** — legacy compatibility. Existing APIs keep working.
+2. **permissions present** — only the declared list is authorized.
+3. **permissions: []** — not legacy. No optional capabilities.
+
+Main-process IPC is the trustworthy boundary when a tweak identity exists. Renderer API filtering is defense-in-depth. Layer Settings / Tweak Store / self-update admin IPC is not a third-party tweak and is not gated by tweak permissions.
+
+`network` is declarative only: the preload cannot block the web `fetch` API, and Layer does not pretend otherwise.

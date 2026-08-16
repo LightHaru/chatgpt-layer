@@ -30,6 +30,70 @@ guide into a wall of text.
 - [Owl bridge roadmap](./OWL-BRIDGE-ROADMAP.md): planned stable bridge APIs for
   runtime info, windows, CDP, and native helpers.
 
+## Permissions
+
+`manifest.permissions` authorizes optional APIs. It is least-privilege
+capability authorization, not a sandbox. Omit the field unless you need to
+restrict or declare specific capabilities.
+
+| Manifest | Behavior |
+|---|---|
+| `permissions` omitted | Legacy: existing APIs keep working. The minimal tweak below is this case. |
+| `"permissions": [ ... ]` | Strict: only listed capabilities are authorized. |
+| `"permissions": []` | Explicitly none: no optional APIs. This is not legacy. |
+
+Declare only what the tweak uses. Do not copy a full permission list.
+
+| Permission | API | Enforcement |
+|---|---|---|
+| `settings` | `api.settings` | Enforced. Explicit manifests omit the API when undeclared. |
+| `ipc` | `api.ipc` | Enforced. Channel names stay `codexpp:<tweakId>:<channel>`. |
+| `filesystem` | `api.fs` | Enforced. Bound to the owning tweak id under `tweak-data/<id>/`. |
+| `codex-runtime` | `api.codex.runtime` | Enforced. |
+| `codex-windows` | `api.codex.windows` and legacy `createWindow` | Enforced. |
+| `codex-views` | `api.codex.views` and legacy `createBrowserView` | Enforced. |
+| `codex-cdp` | `api.codex.cdp` | Enforced. |
+| `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
+| `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
+| `native-helper` | `launchHelper` / helper calls | Enforced. |
+| `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
+
+Aliases (equivalent, both accepted):
+
+- `codex.windows` → `codex-windows`
+- `codex.views` → `codex-views`
+
+Denied calls fail with a predictable error, for example
+`tweak com.example.foo must declare filesystem permission`.
+
+Settings-only example:
+
+```json
+{
+  "id": "com.you.my-tweak",
+  "name": "My Tweak",
+  "version": "0.1.0",
+  "githubRepo": "you/my-tweak",
+  "scope": "renderer",
+  "permissions": ["settings"]
+}
+```
+
+Filesystem + IPC example:
+
+```json
+{
+  "id": "com.you.notes",
+  "name": "Notes",
+  "version": "0.1.0",
+  "githubRepo": "you/notes",
+  "scope": "both",
+  "permissions": ["settings", "ipc", "filesystem"]
+}
+```
+
+See [Manifest reference](./tweaks/manifest.md) for validation details.
+
 ## Minimal Tweak
 
 ```text

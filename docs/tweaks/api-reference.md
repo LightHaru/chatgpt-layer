@@ -263,8 +263,10 @@ type TweakPermission =
   | "native-helper"
 ```
 
-Declared capabilities for user visibility/review. Native permissions and Owl
-view permissions are enforced at runtime.
+Optional capability authorization. Absent keeps legacy API behavior. When
+present, the list is enforced strictly (`[]` grants none). Aliases
+`codex.windows` / `codex.views` match `codex-windows` / `codex-views`.
+`network` is declarative only. See [Writing tweaks](../WRITING-TWEAKS.md#permissions).
 
 ## `TweakMcpServer`
 
@@ -827,7 +829,8 @@ interface CodexNativeApi {
 Native APIs are main-process backed. Renderer tweaks call them through Codex++
 IPC. Local/dev tweaks may load unsigned native code from their own directory;
 store-distributed native tweaks require stricter review. Native module, view,
-and helper permissions are enforced at runtime.
+and helper permissions are enforced at the main-process boundary using the
+owning tweak identity.
 
 ## `CodexCreateWindowOptions`
 
