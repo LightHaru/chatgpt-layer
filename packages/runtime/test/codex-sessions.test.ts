@@ -7,12 +7,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import {
@@ -101,6 +102,18 @@ function linkDir(target: string, dest: string): void {
   assert.fail(
     `unable to create directory link as junction or dir symlink (${errors.join("; ")}); ` +
       "this platform cannot create directory links for the containment test",
+  );
+}
+
+
+function assertInsideAccounts(root: string, dir: string): void {
+  const accountsReal = realpathSync(accountsRoot(root));
+  const dirReal = existsSync(dir) ? realpathSync(dir) : dir;
+  const rel = relative(accountsReal, dirReal);
+  assert.equal(
+    rel !== "" && !rel.startsWith("..") && !isAbsolute(rel),
+    true,
+    `${dirReal} must stay inside ${accountsReal}`,
   );
 }
 
@@ -231,7 +244,7 @@ test("session directories live under userRoot/codex-sessions/accounts/<id>", () 
     const { mgr } = managerFor(root);
     const created = mgr.createSession();
     const dir = sessionDir(root, created.id);
-    assert.equal(dir.startsWith(join(root, "codex-sessions", "accounts")), true);
+    assertInsideAccounts(root, dir);
     assert.equal(existsSync(dir), true);
     assert.equal(existsSync(sessionCodexHome(root, created.id)), true);
     assert.equal(existsSync(sessionSqliteHome(root, created.id)), true);
@@ -680,7 +693,7 @@ test("normal non-symlink create and remove stay inside userRoot", async () => {
     const { mgr } = managerFor(root);
     const created = mgr.createSession({ label: "ok" });
     const dir = sessionDir(root, created.id);
-    assert.equal(dir.startsWith(join(root, "codex-sessions", "accounts")), true);
+    assertInsideAccounts(root, dir);
     assert.equal(existsSync(dir), true);
     await mgr.removeSession(created.id);
     assert.equal(existsSync(dir), false);
