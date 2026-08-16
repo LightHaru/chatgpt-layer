@@ -20,11 +20,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
 
-      # Omit registry-url: setup-node would write an .npmrc with
-      # ${NODE_AUTH_TOKEN}, which breaks npm Trusted Publishing (OIDC).
-      # npm >= 11.5.1 exchanges the GitHub OIDC token automatically.
-      # Do not set NODE_AUTH_TOKEN / NPM_TOKEN.
+      - name: Require release tag commit is on main
+        run: |
+          set -euo pipefail
+          git fetch origin refs/heads/main:refs/remotes/origin/main
+          bash scripts/assert-release-on-main.sh
+
+      # Default registry is registry.npmjs.org, so registry-url is omitted.
+      # Official Trusted Publishing docs also allow setup-node with
+      # registry-url: https://registry.npmjs.org; that does not disable OIDC.
+      # Do not set NODE_AUTH_TOKEN / NPM_TOKEN; npm >= 11.5.1 uses GitHub OIDC.
       - uses: actions/setup-node@v4
         with:
           node-version: 24

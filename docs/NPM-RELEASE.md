@@ -54,6 +54,7 @@ Self-hosted runners are not used and are not supported for this publisher.
 
 - Published package **name** is `chatgpt-layer` (not the private root `codex-plusplus`).
 - GitHub Release tag is `v` + `packages/installer` version.
+- GitHub Release tag commit must already be on `main` (`git merge-base --is-ancestor HEAD origin/main`); a branch-only tag is refused.
 - Workspace package versions that share the product version match; mismatches fail closed with a list.
 - `GET https://registry.npmjs.org/chatgpt-layer/X.Y.Z` — HTTP 200 fails with `chatgpt-layer@X.Y.Z already exists on npm`. HTTP 404 continues.
 - Packed tarball includes `dist`, `assets`, `README.md`, and `LICENSE`, and has no workspace-only deps such as `@codex-plusplus/sdk: *`.
