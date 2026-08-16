@@ -439,15 +439,41 @@ function hasWindowServicesMarker(asarPath: string): boolean {
   try {
     const files = (asar as unknown as { listPackage: (path: string) => string[] }).listPackage(asarPath);
     for (const file of files) {
-      const relative = file.replace(/\\/g, "/").replace(/^\/+/, "");
+      const relative = asarPosixPath(file);
       if (!relative.startsWith(".vite/build/") || !relative.endsWith(".js")) continue;
-      const source = asar.extractFile(asarPath, relative).toString("utf8");
-      if (source.includes("__codexpp_window_services__")) return true;
+      const source = readAsarFile(asarPath, relative, file);
+      if (source?.includes("__codexpp_window_services__")) return true;
     }
   } catch {
     return false;
   }
   return false;
+}
+
+function asarPosixPath(listed: string): string {
+  return listed.replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function readAsarFile(asarPath: string, posixRelative: string, listed: string): string | null {
+  // @electron/asar listPackage uses path.join('/', ...), so Windows entries are
+  // "\\.vite\\build\\main.js". extractFile/getFile split on path.sep, so a
+  // posix extract path does not resolve nested header keys on win32.
+  const candidates = [
+    posixRelative.split("/").join(sep),
+    posixRelative,
+    listed.replace(/^[\\/]+/, ""),
+  ];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    try {
+      return asar.extractFile(asarPath, candidate).toString("utf8");
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 function runtimeFeature(runtimeMain: string, needle: string): boolean {

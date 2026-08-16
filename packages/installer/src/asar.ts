@@ -8,7 +8,7 @@
  */
 import asar from "@electron/asar";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -79,20 +79,46 @@ export async function patchAsar(
     }
     return readHeaderHash(asarPath);
   } finally {
-    await cleanupTempTree(work);
+    try {
+      await cleanupTempTree(work);
+    } catch {
+      // Best-effort: a leftover temp dir must not fail a successful patch.
+    }
   }
 }
 
 export async function cleanupTempTree(path: string): Promise<void> {
-  const retryDelaysMs = [25, 75, 150, 300, 600];
-  for (const waitMs of [0, ...retryDelaysMs]) {
-    if (waitMs > 0) await delay(waitMs);
+  // Node's fs.rmSync maxRetries only retries unlink EPERM/EBUSY, not the
+  // ENOTEMPTY that Windows rimraf throws from rmdirSync. Retry the whole
+  // recursive remove ourselves, and clear read-only bits first on Windows.
+  const attempts = 10;
+  const delayMs = 75;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      rmSync(path, { recursive: true, force: true, maxRetries: 5 });
+      if (process.platform === "win32") chmodTreeWritable(path);
+      rmSync(path, { recursive: true, force: true });
       return;
     } catch (e) {
+      lastError = e;
       if (!isTransientCleanupError(e)) return;
+      if (attempt < attempts) await delay(delayMs);
     }
+  }
+  if (lastError) throw lastError;
+}
+
+function chmodTreeWritable(root: string): void {
+  try {
+    const st = lstatSync(root);
+    if (st.isSymbolicLink()) return;
+    chmodSync(root, st.isDirectory() ? 0o777 : 0o666);
+    if (!st.isDirectory()) return;
+    for (const name of readdirSync(root)) {
+      chmodTreeWritable(join(root, name));
+    }
+  } catch {
+    // Best-effort: a locked file should still be retried by rmSync.
   }
 }
 
