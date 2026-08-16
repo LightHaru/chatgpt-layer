@@ -1,0 +1,85 @@
+name: Publish npm package
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: publish-npm-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      # Omit registry-url: setup-node would write an .npmrc with
+      # ${NODE_AUTH_TOKEN}, which breaks npm Trusted Publishing (OIDC).
+      # npm >= 11.5.1 exchanges the GitHub OIDC token automatically.
+      # Do not set NODE_AUTH_TOKEN / NPM_TOKEN.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Show toolchain
+        run: |
+          node --version
+          npm --version
+
+      - name: Ensure npm CLI for Trusted Publishing
+        run: |
+          set -euo pipefail
+          # npm Trusted Publishing requires npm CLI >= 11.5.1 and Node >= 22.14.0.
+          # Node 24 satisfies Node. Ensure npm >= 11.5.1 without using a token.
+          if ! node scripts/ensure-npm-cli.mjs; then
+            echo "bundled npm is below 11.5.1; installing npm@11"
+            npm install -g npm@11
+          fi
+          node --version
+          npm --version
+          node scripts/ensure-npm-cli.mjs --require
+
+      - name: Validate release tag and package
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/validate-npm-release.mjs
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Pack / dry-run installer
+        working-directory: packages/installer
+        run: |
+          set -euo pipefail
+          npm publish --dry-run --access public
+          npm pack
+          node ../../scripts/inspect-npm-pack.mjs
+
+      - name: Smoke CLI from packed tarball
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tgzs=(packages/installer/chatgpt-layer-*.tgz)
+          if [ "${#tgzs[@]}" -ne 1 ]; then
+            echo "expected exactly one chatgpt-layer-*.tgz, got ${#tgzs[@]}" >&2
+            exit 1
+          fi
+          prefix="$(mktemp -d)"
+          npm install -g --prefix "$prefix" "${tgzs[0]}"
+          "$prefix/bin/chatgpt-layer" --help
+
+      - name: Publish to npm (OIDC Trusted Publishing)
+        working-directory: packages/installer
+        run: npm publish --access public
+

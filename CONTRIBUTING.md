@@ -19,4 +19,5 @@ Default tweaks are developed and released from their own repositories. First-run
 3. Run `npm run build`.
 4. Run `npm run audit`.
 5. Test `codex-plusplus install`, `doctor`, `repair`, and `uninstall` on a real Codex install for the target platform.
-6. Create a GitHub release with a semver tag.
+6. Create a GitHub release with a semver tag (`vX.Y.Z`). Publishing `chatgpt-layer` to npm is documented in [docs/NPM-RELEASE.md](docs/NPM-RELEASE.md).
+

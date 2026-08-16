@@ -60,6 +60,12 @@ npm install -g chatgpt-layer
 chatgpt-layer install
 ```
 
+Or without a global install:
+
+```sh
+npx chatgpt-layer@latest install
+```
+
 Aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`. Package: [chatgpt-layer](https://www.npmjs.com/package/chatgpt-layer).
 
 **GitHub one-liners** (alternative)
@@ -219,6 +225,7 @@ APIs are still `api.codex.*`. Full guide: [Writing Tweaks](docs/WRITING-TWEAKS.m
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Writing Tweaks](docs/WRITING-TWEAKS.md)
 - [Tweak API](docs/tweaks/api-reference.md)
+- [npm releases](docs/NPM-RELEASE.md)
 
 ## Acknowledgments <img alt="" src="https://img.shields.io/badge/based%20on%20Codex++-111827?style=flat-square">
 
@@ -273,6 +280,12 @@ Không chính thức. Không liên kết với OpenAI.
 ```sh
 npm install -g chatgpt-layer
 chatgpt-layer install
+```
+
+Hoặc không cần cài global:
+
+```sh
+npx chatgpt-layer@latest install
 ```
 
 Alias: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`. Gói: [chatgpt-layer](https://www.npmjs.com/package/chatgpt-layer).
@@ -434,6 +447,7 @@ API vẫn `api.codex.*`. Hướng dẫn đầy đủ: [Writing Tweaks](docs/WRIT
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Writing Tweaks](docs/WRITING-TWEAKS.md)
 - [Tweak API](docs/tweaks/api-reference.md)
+- [Phát hành npm](docs/NPM-RELEASE.md)
 
 ## Cảm ơn <img alt="" src="https://img.shields.io/badge/based%20on%20Codex++-111827?style=flat-square">
 
@@ -450,3 +464,4 @@ Discord cộng đồng (server của Bennett, không phải tên sản phẩm): 
 ## Giấy phép <img alt="" src="https://img.shields.io/github/license/LightHaru/chatgpt-layer?style=flat-square&color=111827">
 
 [MIT](LICENSE).
+
