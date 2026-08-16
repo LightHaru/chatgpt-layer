@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireCodexSessionManager = exports.getCodexSessionManager = exports.setCodexSessionManager = exports.stripCredentials = exports.CodexSessionManager = exports.ISOLATED_ENV_ALLOWLIST = exports.isolatedSessionEnv = exports.resolveTrustedCodexExecutable = exports.createNodeCodexProcessLauncher = exports.CODEX_SESSION_LAST_EXIT_KEYS = exports.CODEX_SESSION_METADATA_KEYS = exports.ensureSafeSessionLayout = exports.assertSafeSessionLayout = exports.isForbiddenSessionDeleteTarget = exports.collectForbiddenDeleteTargets = exports.rmSessionDir = exports.sessionSqliteHome = exports.sessionCodexHome = exports.sessionMetaPath = exports.sessionDir = exports.accountsRoot = exports.sessionsRoot = exports.SESSION_ID_RE = exports.isSessionId = exports.assertSessionId = exports.generateSessionId = void 0;
+exports.requireCodexSessionManager = exports.getCodexSessionManager = exports.setCodexSessionManager = exports.stripCredentials = exports.CodexSessionManager = exports.ISOLATED_ENV_ALLOWLIST = exports.isolatedSessionEnv = exports.trustedCodexSearchRoots = exports.resolveTrustedCodexExecutable = exports.createNodeCodexProcessLauncher = exports.CODEX_SESSION_LAST_EXIT_KEYS = exports.CODEX_SESSION_METADATA_KEYS = exports.ensureSafeSessionLayout = exports.assertSafeSessionLayout = exports.isForbiddenSessionDeleteTarget = exports.collectForbiddenDeleteTargets = exports.rmSessionDir = exports.sessionSqliteHome = exports.sessionCodexHome = exports.sessionMetaPath = exports.sessionDir = exports.accountsRoot = exports.sessionsRoot = exports.SESSION_ID_RE = exports.isSessionId = exports.assertSessionId = exports.generateSessionId = void 0;
 var ids_1 = require("./ids");
 Object.defineProperty(exports, "generateSessionId", { enumerable: true, get: function () { return ids_1.generateSessionId; } });
 Object.defineProperty(exports, "assertSessionId", { enumerable: true, get: function () { return ids_1.assertSessionId; } });
@@ -24,6 +24,7 @@ Object.defineProperty(exports, "CODEX_SESSION_LAST_EXIT_KEYS", { enumerable: tru
 var launcher_1 = require("./launcher");
 Object.defineProperty(exports, "createNodeCodexProcessLauncher", { enumerable: true, get: function () { return launcher_1.createNodeCodexProcessLauncher; } });
 Object.defineProperty(exports, "resolveTrustedCodexExecutable", { enumerable: true, get: function () { return launcher_1.resolveTrustedCodexExecutable; } });
+Object.defineProperty(exports, "trustedCodexSearchRoots", { enumerable: true, get: function () { return launcher_1.trustedCodexSearchRoots; } });
 Object.defineProperty(exports, "isolatedSessionEnv", { enumerable: true, get: function () { return launcher_1.isolatedSessionEnv; } });
 Object.defineProperty(exports, "ISOLATED_ENV_ALLOWLIST", { enumerable: true, get: function () { return launcher_1.ISOLATED_ENV_ALLOWLIST; } });
 var manager_1 = require("./manager");

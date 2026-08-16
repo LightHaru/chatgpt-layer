@@ -13,6 +13,11 @@ export interface CodexProcessLauncher {
 }
 export declare const ISOLATED_ENV_ALLOWLIST: readonly ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG", "LC_ALL"];
 export declare function isolatedSessionEnv(intent: CodexSessionLaunchIntent, sourceEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+export declare function trustedCodexSearchRoots(opts: {
+    platform?: NodeJS.Platform;
+    resourcesPath?: string | null;
+    appPath?: string | null;
+}): string[];
 export declare function resolveTrustedCodexExecutable(opts: {
     platform?: NodeJS.Platform;
     resourcesPath?: string | null;

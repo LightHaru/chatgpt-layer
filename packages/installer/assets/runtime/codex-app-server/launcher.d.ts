@@ -9,8 +9,9 @@ export interface CodexAppServerLauncher {
     launchAppServer(intent: AppServerLaunchIntent): Promise<CodexAppServerTransport>;
 }
 /**
- * Production launcher. Fail-closed: the exact ChatGPT Desktop app-server
- * argv has not been proven in this tree. Callers cannot pass exe/argv/env.
+ * Production launcher. Fail-closed: upstream CLI/SDK stdio argv is known,
+ * but Desktop's bundled spawn is still UNVERIFIED, so Layer must not spawn
+ * a production app-server child. Callers cannot pass exe/argv/env.
  * The session registry does not call this — tests may use it to build a
  * fixture transport, then attach that transport to the registry.
  */

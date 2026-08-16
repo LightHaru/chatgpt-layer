@@ -22,8 +22,9 @@ export interface CodexAppServerLauncher {
 }
 
 /**
- * Production launcher. Fail-closed: the exact ChatGPT Desktop app-server
- * argv has not been proven in this tree. Callers cannot pass exe/argv/env.
+ * Production launcher. Fail-closed: upstream CLI/SDK stdio argv is known,
+ * but Desktop's bundled spawn is still UNVERIFIED, so Layer must not spawn
+ * a production app-server child. Callers cannot pass exe/argv/env.
  * The session registry does not call this — tests may use it to build a
  * fixture transport, then attach that transport to the registry.
  */
@@ -34,7 +35,8 @@ export function createFailClosedAppServerLauncher(): CodexAppServerLauncher {
         new CodexAppServerError(
           "not-proven",
           `Codex app-server invocation is ${APP_SERVER_INVOCATION_STATUS}; production child transport is disabled ` +
-            `(reference argv ${JSON.stringify(REFERENCE_APP_SERVER_ARGV)} is not proven). ` +
+            `(upstream stdio argv is proven; Desktop bundled spawn remains UNVERIFIED; ` +
+            `reference argv ${JSON.stringify(REFERENCE_APP_SERVER_ARGV)} is not a production spawn). ` +
             `productionChildTransportEnabled=${PRODUCTION_CHILD_TRANSPORT_ENABLED}`,
         ),
       );

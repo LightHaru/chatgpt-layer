@@ -43,6 +43,21 @@ export function isolatedSessionEnv(
   return env;
 }
 
+export function trustedCodexSearchRoots(opts: {
+  platform?: NodeJS.Platform;
+  resourcesPath?: string | null;
+  appPath?: string | null;
+}): string[] {
+  const platform = opts.platform ?? process.platform;
+  const roots: string[] = [];
+  if (opts.resourcesPath) roots.push(opts.resourcesPath);
+  if (opts.appPath) roots.push(opts.appPath);
+  if (platform === "darwin" && opts.appPath) {
+    roots.push(join(opts.appPath, "Contents", "Resources"));
+  }
+  return roots;
+}
+
 export function resolveTrustedCodexExecutable(opts: {
   platform?: NodeJS.Platform;
   resourcesPath?: string | null;
@@ -50,21 +65,14 @@ export function resolveTrustedCodexExecutable(opts: {
   existsSync?: (path: string) => boolean;
 }): string | null {
   const exists = opts.existsSync ?? existsSync;
-  const platform = opts.platform ?? process.platform;
   const candidates: string[] = [];
-  const addRelatives = (root: string | null | undefined) => {
-    if (!root) return;
+  for (const root of trustedCodexSearchRoots(opts)) {
     candidates.push(
       join(root, "codex"),
       join(root, "bin", "codex"),
       join(root, "Codex.exe"),
       join(root, "bin", "Codex.exe"),
     );
-  };
-  addRelatives(opts.resourcesPath ?? undefined);
-  addRelatives(opts.appPath ?? undefined);
-  if (platform === "darwin" && opts.appPath) {
-    addRelatives(join(opts.appPath, "Contents", "Resources"));
   }
   for (const candidate of candidates) {
     if (exists(candidate)) return candidate;

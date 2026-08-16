@@ -10,8 +10,9 @@ const child_transport_1 = require("./child-transport");
 const discovery_1 = require("./discovery");
 const errors_1 = require("./errors");
 /**
- * Production launcher. Fail-closed: the exact ChatGPT Desktop app-server
- * argv has not been proven in this tree. Callers cannot pass exe/argv/env.
+ * Production launcher. Fail-closed: upstream CLI/SDK stdio argv is known,
+ * but Desktop's bundled spawn is still UNVERIFIED, so Layer must not spawn
+ * a production app-server child. Callers cannot pass exe/argv/env.
  * The session registry does not call this — tests may use it to build a
  * fixture transport, then attach that transport to the registry.
  */
@@ -19,7 +20,8 @@ function createFailClosedAppServerLauncher() {
     return {
         launchAppServer() {
             return Promise.reject(new errors_1.CodexAppServerError("not-proven", `Codex app-server invocation is ${discovery_1.APP_SERVER_INVOCATION_STATUS}; production child transport is disabled ` +
-                `(reference argv ${JSON.stringify(discovery_1.REFERENCE_APP_SERVER_ARGV)} is not proven). ` +
+                `(upstream stdio argv is proven; Desktop bundled spawn remains UNVERIFIED; ` +
+                `reference argv ${JSON.stringify(discovery_1.REFERENCE_APP_SERVER_ARGV)} is not a production spawn). ` +
                 `productionChildTransportEnabled=${discovery_1.PRODUCTION_CHILD_TRANSPORT_ENABLED}`));
         },
     };

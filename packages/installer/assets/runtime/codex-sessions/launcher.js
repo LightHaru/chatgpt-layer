@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ISOLATED_ENV_ALLOWLIST = void 0;
 exports.isolatedSessionEnv = isolatedSessionEnv;
+exports.trustedCodexSearchRoots = trustedCodexSearchRoots;
 exports.resolveTrustedCodexExecutable = resolveTrustedCodexExecutable;
 exports.createNodeCodexProcessLauncher = createNodeCodexProcessLauncher;
 const node_child_process_1 = require("node:child_process");
@@ -29,19 +30,23 @@ function isolatedSessionEnv(intent, sourceEnv = process.env) {
     env.CODEX_SQLITE_HOME = intent.sqliteHome;
     return env;
 }
+function trustedCodexSearchRoots(opts) {
+    const platform = opts.platform ?? process.platform;
+    const roots = [];
+    if (opts.resourcesPath)
+        roots.push(opts.resourcesPath);
+    if (opts.appPath)
+        roots.push(opts.appPath);
+    if (platform === "darwin" && opts.appPath) {
+        roots.push((0, node_path_1.join)(opts.appPath, "Contents", "Resources"));
+    }
+    return roots;
+}
 function resolveTrustedCodexExecutable(opts) {
     const exists = opts.existsSync ?? node_fs_1.existsSync;
-    const platform = opts.platform ?? process.platform;
     const candidates = [];
-    const addRelatives = (root) => {
-        if (!root)
-            return;
+    for (const root of trustedCodexSearchRoots(opts)) {
         candidates.push((0, node_path_1.join)(root, "codex"), (0, node_path_1.join)(root, "bin", "codex"), (0, node_path_1.join)(root, "Codex.exe"), (0, node_path_1.join)(root, "bin", "Codex.exe"));
-    };
-    addRelatives(opts.resourcesPath ?? undefined);
-    addRelatives(opts.appPath ?? undefined);
-    if (platform === "darwin" && opts.appPath) {
-        addRelatives((0, node_path_1.join)(opts.appPath, "Contents", "Resources"));
     }
     for (const candidate of candidates) {
         if (exists(candidate))
