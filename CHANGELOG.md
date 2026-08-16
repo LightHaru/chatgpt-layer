@@ -11,6 +11,7 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 - README install docs lead with `npm install -g chatgpt-layer`; GitHub one-liners are the alternative.
 - Cross-platform CI matrix: Ubuntu, macOS, and Windows x Node 20 and 22. POSIX rm of package dist dirs is replaced by an in-repo Node clean script. Test discovery no longer depends on shell glob expansion.
 - Installer CLI package is registry-ready as `chatgpt-layer` 1.1.4: public metadata, SDK bundled into the published package, no unpublished workspace runtime deps.
+- Trusted Publishing via GitHub Actions OIDC for future `chatgpt-layer` releases (no token in CI).
 
 ### Security
 
@@ -282,3 +283,4 @@ Release notes: [docs/releases/0.1.2.md](docs/releases/0.1.2.md)
 - Default tweak seeding from Bennett UI Improvements and Custom Keyboard Shortcuts GitHub release channels, with `--no-default-tweaks`.
 - Review-only tweak update checks via required `githubRepo` manifest metadata.
 - In-app tweak manager with enable/disable, config, release links, and maintenance actions.
+
