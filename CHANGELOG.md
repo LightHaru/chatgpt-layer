@@ -6,6 +6,13 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ## Unreleased
 
+### Added
+
+- MS-2A Layer-internal Codex app-server transport, request correlation, thread-owner store, and simple sticky-thread routing core. Production child invocation stays fail-closed until proven. No public mutation IPC, no Smart Routing, no Desktop interception.
+- MS-2A review: attach-only session transport (no second child), byte-safe NDJSON, single server-request handler, type-safe request ids.
+- MS-2A registry isolation: transport.sessionId must match before handshake, stale onClose is object-identity checked, exclusive attach reservation, closeAll during handshake does not bind.
+- MS-2A registry owns in-flight attach transports: `attaching` is a sessionId→transport map; `stop`/`closeAll` close reserved handshake transports and await them; a deleted session does not bind after initialize.
+
 ### Changed
 
 - README install docs lead with `npm install -g chatgpt-layer`; GitHub one-liners are the alternative.

@@ -17,6 +17,7 @@ window, not a `hostId` route, and not Smart Routing.
 - Stable opaque session identity (`session_` + 24 hex chars).
 - Isolated filesystem layout under Layer's user-data root.
 - In-memory lifecycle: `STOPPED` → `STARTING` → `RUNNING` → `STOPPING` → `STOPPED` / `FAILED`.
+- MS-2A invariant: one session = one Layer-owned Codex app-server child. The transport registry attaches to that session; it does not spawn a second process. Production app-server spawn stays BLOCKED.
 - Trusted-executable spawn only. Tweaks cannot pass argv, shell, env maps, or paths.
 - Read-only tweak API: `api.codex.sessions.list()` and `getStatus(id)`, gated by `codex-sessions`.
 - Bounded shutdown of live children on `will-quit`.
@@ -50,9 +51,10 @@ does not intercept or route that traffic.
 | Isolated `CODEX_HOME` / sqlite home | yes | — |
 | Child process lifecycle | yes (dormant) | UI to start/stop |
 | Tweak read API | `list` / `getStatus` | maybe richer status |
-| App-server interception | **no** | MS-2 blocker |
-| Smart Routing | no | MS-2+ |
-| Sticky threads | no | MS-2+ |
+| App-server interception | **no** | MS-2B blocker (Desktop live connection) |
+| Layer-owned app-server transport | MS-2A core (fail-closed in production) | proven child invocation |
+| Sticky thread ownership | MS-2A store + simple router | Smart Routing |
+| Smart Routing | no | later |
 | Accounts migration | no | copy later, atomically |
 
 Architectural comparison:
@@ -192,17 +194,19 @@ Denied calls throw `tweak <id> must declare codex-sessions permission`.
 
 ## 12. Future routing
 
-MS-1 does **not** route ChatGPT traffic. Full app-server interception/routing
-is **not possible in MS-1** and is the explicit blocker for MS-2.
+MS-1 does **not** route ChatGPT traffic. MS-2A adds a Layer-internal transport
+and simple sticky-thread core; it still does **not** intercept ChatGPT Desktop's
+live app-server connection (that is MS-2B).
 
-Layer does not currently own the ChatGPT app-server connection. Until it can
-observe or proxy that transport without replacing the desktop binary, sticky
-thread routing and multi-account chat mux cannot ship.
+See [Codex app-server transport (MS-2A)](./CODEX-APP-SERVER.md).
 
-## 13. Future sticky-thread
+## 13. Sticky-thread core (MS-2A)
 
-Out of scope. No `ThreadOwnerStore`, no routing strategy classes. A later
-milestone may key conversations to `session_` ids once a transport exists.
+`ThreadOwnerStore` persists `threadId → sessionId` at
+`<userRoot>/codex-sessions/thread-owners.json`. `CodexSessionRouter` assigns new
+threads to an explicit (or test-selected) RUNNING session and routes existing
+threads to the recorded owner. There is **no** quota scoring, **no** failover
+migration, and **no** Smart Routing.
 
 ## 14. Failure handling
 
@@ -270,17 +274,17 @@ code. Main authorizes when a tweak identity is present.
 ## 20. Known limitations
 
 - Trusted Codex executable may be unresolved; `startSession` then fails closed.
-- Layer does not own ChatGPT's app-server (MS-2 blocker).
-- No Smart Routing, sticky threads, or Accounts import.
+- Layer does not own ChatGPT's live Desktop app-server (MS-2B blocker).
+- Production Layer-owned app-server child invocation is **BLOCKED** until proven.
+- No Smart Routing or Accounts import.
 - Public tweak API is read-only; create/start/stop are main-process only.
-- Child stdout is discarded; there is no session log stream.
+- MS-1 child stdout is discarded; MS-2A protocol stdio is Layer-internal only.
 - MS-1 is dormant: nothing starts unless main code calls `startSession`.
 
 ## 21. MS-2 follow-ups
 
-- Resolve a real trusted Codex/CLI executable in the ChatGPT bundle, or document why not.
-- App-server observation/proxy without replacing the desktop binary (blocker).
+- Prove the real bundled Codex app-server argv/framing against ChatGPT Desktop.
+- MS-2B: observe or proxy Desktop's live app-server without replacing binaries.
 - Optional UI to create/start/stop sessions.
 - Atomic Accounts copy into a session home (never log tokens).
-- Sticky-thread and Smart Routing — only after a transport exists.
-- Do not add `RoutingStrategy` classes until that transport exists.
+- Smart Routing and quota-aware failover — only after a proven transport exists.
