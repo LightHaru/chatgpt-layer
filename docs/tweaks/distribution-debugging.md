@@ -2,15 +2,14 @@
 
 ## Release Checks
 
-Every tweak must declare `githubRepo` in `owner/repo` form. Codex++ checks
+Every tweak must declare `githubRepo` in `owner/repo` form. ChatGPT Layer checks
 GitHub Releases at most once per day per installed tweak:
 
 - Current version comes from `manifest.version`.
-- Latest version comes from the latest release tag.
-- Tags are compared as semver with optional leading `v`.
-- If newer, Settings -> Tweaks shows update UI linking to the GitHub release.
+- A newer GitHub release tag can badge Settings -> Tweaks (semver, optional leading `v`).
+- Store **Update** / **Install** only installs the `approvedCommitSha` pinned in `store/index.json`, not the latest tag.
 
-Codex++ does not auto-install arbitrary tweak releases.
+ChatGPT Layer does not auto-install arbitrary tweak releases.
 
 ## Tweak Store
 
@@ -18,7 +17,7 @@ Store-approved tweaks are pinned to reviewed commit SHAs in `store/index.json`.
 Store installs validate the downloaded manifest against the approved entry and
 write `.codexpp-store.json` metadata into the installed tweak folder.
 
-When updating a store tweak, Codex++ checks whether local files differ from the
+When updating a store tweak, ChatGPT Layer checks whether local files differ from the
 approved baseline. If they do, it refuses to auto-update and asks the user to
 resolve local changes.
 

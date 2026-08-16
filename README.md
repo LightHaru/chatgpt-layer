@@ -51,7 +51,7 @@ Unofficial. Not affiliated with OpenAI.
 
 ## Install <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
 
-The one-liners track `main`. Prefer a tagged GitHub release, or clone and build, if you want a pinned tree.
+The one-liners fetch the installer script from `main` (fail-closed lockfile). That script then pins the downloaded source to tag `v1.1.3` unless `CODEX_PLUSPLUS_REF` is set.
 
 <p>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white">
@@ -254,7 +254,7 @@ Không chính thức. Không liên kết với OpenAI.
 
 ## Cài đặt <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
 
-One-liner theo `main`. Muốn cây ghim thì dùng GitHub Release có tag, hoặc clone rồi build.
+One-liner lấy script cài từ `main` (lockfile fail-closed). Script đó ghim source tải về tag `v1.1.3` trừ khi đặt `CODEX_PLUSPLUS_REF`.
 
 <p>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white">

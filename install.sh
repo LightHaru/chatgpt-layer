@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="${CHATGPT_LAYER_REPO:-${CODEX_PLUSPLUS_REPO:-LightHaru/chatgpt-layer}}"
-REF="${CODEX_PLUSPLUS_REF:-main}"
+REF="${CODEX_PLUSPLUS_REF:-v1.1.3}"
 
 fail() {
   echo "[!] $1" >&2
