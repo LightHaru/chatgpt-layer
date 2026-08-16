@@ -8,16 +8,34 @@
  */
 import asar from "@electron/asar";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate as yieldToEventLoop, setTimeout as delay } from "node:timers/promises";
 
 export interface AsarHeaderInfo {
   /** SHA-256 hex of the header JSON bytes Electron hashes. */
   headerHash: string;
   /** The decoded header object (the directory tree). */
   header: unknown;
+}
+
+/** Filesystem operations used by Windows/Unix asar replacement. Injected in tests. */
+export interface AsarReplaceFs {
+  unlinkSync: (path: string) => void;
+  renameSync: (from: string, to: string) => void;
+  writeFileSync: (path: string, data: Uint8Array) => void;
+  readFileSync: (path: string) => Buffer;
+  chmodSync: (path: string, mode: number) => void;
+  openSync: (path: string, flags: string) => number;
+  fsyncSync: (fd: number) => void;
+  closeSync: (fd: number) => void;
+}
+
+/** Optional replacement hooks so tests can assert the Windows overwrite path. */
+export interface AsarReplaceHooks {
+  platform?: NodeJS.Platform;
+  fs?: Partial<AsarReplaceFs>;
 }
 
 export function readHeaderHash(asarPath: string): AsarHeaderInfo {
@@ -27,6 +45,129 @@ export function readHeaderHash(asarPath: string): AsarHeaderInfo {
   }).getRawHeader(asarPath);
   const hash = createHash("sha256").update(raw.headerString).digest("hex");
   return { headerHash: hash, header: raw.header };
+}
+
+/**
+ * True when the ROOT app.asar/package.json can be read from RAW asar file
+ * bytes: header.files["package.json"] is a packed non-empty file, and those
+ * payload bytes are non-empty, contain no NUL, and parse as JSON. Nested
+ * package.json files are ignored. Does not use extractFile/getRawHeader
+ * and does not log file contents.
+ */
+export function asarHasReadablePackageJson(asarPath: string): boolean {
+  try {
+    return inspectPackedAsar(readFileSync(asarPath)).ok;
+  } catch {
+    return false;
+  }
+}
+
+export function asarBufferHasReadablePackageJson(bytes: Buffer): boolean {
+  return inspectPackedAsar(bytes).ok;
+}
+
+interface PackedAsarInspection {
+  ok: boolean;
+  reason: string;
+}
+
+function inspectPackedAsar(bytes: Buffer): PackedAsarInspection {
+  try {
+    if (!bytes || bytes.length === 0) return { ok: false, reason: "empty" };
+    if (bytes[0] === 0) return { ok: false, reason: "leading-nul" };
+    if (bytes.length < 16) return { ok: false, reason: "truncated-header" };
+    // Electron asar: 8-byte size pickle (uint32 payload size + uint32 header size).
+    const headerPickleSize = bytes.readUInt32LE(4);
+    if (headerPickleSize <= 4 || 8 + headerPickleSize > bytes.length) {
+      return { ok: false, reason: "truncated-header" };
+    }
+    const headerPickle = bytes.subarray(8, 8 + headerPickleSize);
+    const jsonLength = headerPickle.readInt32LE(4);
+    if (jsonLength <= 0 || 8 + jsonLength > headerPickle.length) {
+      return { ok: false, reason: "bad-pickle" };
+    }
+    const headerJson = headerPickle.subarray(8, 8 + jsonLength).toString("utf8");
+    if (!headerJson || headerJson.includes("\0")) return { ok: false, reason: "bad-pickle" };
+    const header = JSON.parse(headerJson) as { files?: Record<string, unknown> };
+    // ChatGPT Layer injects the loader into app.asar/package.json at the archive
+    // root. Nested node_modules/*/package.json must not satisfy this check.
+    const entry = packedFileEntry(header.files?.["package.json"]);
+    if (!entry) return { ok: false, reason: "no-package.json" };
+    const dataStart = 8 + headerPickleSize;
+    const start = dataStart + entry.offset;
+    const end = start + entry.size;
+    if (start < dataStart || end > bytes.length) return { ok: false, reason: "truncated-payload" };
+    const payload = bytes.subarray(start, end);
+    if (payload.length === 0) return { ok: false, reason: "empty-payload" };
+    if (payload.includes(0)) return { ok: false, reason: "nul-payload" };
+    const raw = payload.toString("utf8").trim();
+    if (!raw) return { ok: false, reason: "empty-payload" };
+    JSON.parse(raw);
+    return { ok: true, reason: "ok" };
+  } catch {
+    return { ok: false, reason: "bad-json" };
+  }
+}
+
+/**
+ * @electron/asar createPackage resolves on writable.end(), which does not wait
+ * for the stream 'finish' event. On Windows the file can still be truncated
+ * when that promise resolves. Yield to the event loop until the packed bytes
+ * parse, then fail closed. This is not a createPackage retry and not a sleep.
+ */
+async function waitForReadablePackedAsar(path: string, label: string): Promise<void> {
+  const attempts = 40;
+  let reason = "missing";
+  let size = 0;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try { fsyncPath(path); } catch { /* dest may still be opening */ }
+    let bytes = Buffer.alloc(0);
+    try { bytes = readFileSync(path); } catch { /* not visible yet */ }
+    size = bytes.length;
+    const info = inspectPackedAsar(bytes);
+    reason = info.reason;
+    if (info.ok) return;
+    if (attempt < attempts) await yieldToEventLoop();
+  }
+  throw new Error(`${label} asar is unreadable (${reason}, size=${size})`);
+}
+
+function packedFileEntry(node: unknown): { size: number; offset: number } | null {
+  if (!node || typeof node !== "object") return null;
+  const rec = node as { files?: unknown; size?: unknown; offset?: unknown; unpacked?: unknown };
+  if (rec.files) return null;
+  if (rec.unpacked) return null;
+  const size = Number(rec.size);
+  const offset = Number(rec.offset ?? 0);
+  if (!Number.isFinite(size) || size <= 0) return null;
+  if (!Number.isFinite(offset) || offset < 0) return null;
+  return { size, offset };
+}
+
+function defaultReplaceFs(): AsarReplaceFs {
+  return {
+    unlinkSync,
+    renameSync,
+    writeFileSync: (path, data) => { writeFileSync(path, data); },
+    readFileSync: (path) => readFileSync(path),
+    chmodSync,
+    openSync: (path, flags) => openSync(path, flags),
+    fsyncSync,
+    closeSync,
+  };
+}
+
+function resolveReplaceFs(partial?: Partial<AsarReplaceFs>): AsarReplaceFs {
+  return { ...defaultReplaceFs(), ...partial };
+}
+
+function fsyncPathWith(fs: AsarReplaceFs, path: string): void {
+  const fd = fs.openSync(path, "r+");
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function fsyncPath(path: string): void {
+  fsyncPathWith(defaultReplaceFs(), path);
 }
 
 /**
@@ -43,6 +184,7 @@ export function readHeaderHash(asarPath: string): AsarHeaderInfo {
 export async function patchAsar(
   asarPath: string,
   mutate: (extractedDir: string) => Promise<void> | void,
+  hooks?: AsarReplaceHooks,
 ): Promise<AsarHeaderInfo> {
   const work = mkdtempSync(join(tmpdir(), "cxx-asar-"));
   const extractDir = join(work, "src");
@@ -67,28 +209,44 @@ export async function patchAsar(
       globOptions: { dot: true },
       ...originalUnpackOptions,
     });
+    uncacheAsar(outAsar);
+    await waitForReadablePackedAsar(outAsar, "packed");
 
-    // Atomic-ish replace: write next to the target, then rename. This prevents
-    // a denied write (e.g. macOS App Management TCC) from leaving the bundle
-    // without an app.asar. Both the staging file and target must be on the
-    // same filesystem for `rename` to be atomic.
+    // Atomic-ish replace: write next to the target, then rename on Unix. This
+    // prevents a denied write (e.g. macOS App Management TCC) from leaving the
+    // bundle without an app.asar. Both the staging file and target must be on
+    // the same filesystem for `rename` to be atomic. Windows overwrites dest
+    // in place instead of unlink-then-rename (see replaceAsarAtomically).
     const stagingPath = `${asarPath}.codexpp-new`;
     try {
       cpSync(outAsar, stagingPath);
+      fsyncPath(stagingPath);
     } catch (e) {
       throw annotatePermError(e, asarPath);
     }
+    uncacheAsar(stagingPath);
     try {
-      await replaceAsarAtomically(stagingPath, asarPath);
+      await waitForReadablePackedAsar(stagingPath, "staged");
     } catch (e) {
-      try { unlinkSync(stagingPath); } catch { /* best effort */ }
+      try { unlinkSync(stagingPath); } catch { /* dest was not touched */ }
+      throw e;
+    }
+    try {
+      await replaceAsarAtomically(stagingPath, asarPath, hooks);
+    } catch (e) {
       throw annotatePermError(e, asarPath);
     }
     // @electron/asar caches Filesystem objects by path. Replacing app.asar
     // in place must drop that cache or later extractFile/extractAll reads
     // the old header against the new bytes.
-    asar.uncache(asarPath);
-    return readHeaderHash(asarPath);
+    uncacheAsar(asarPath);
+    if (!asarHasReadablePackageJson(asarPath)) {
+      throw new Error("replaced asar is unreadable");
+    }
+    uncacheAsar(asarPath);
+    const info = readHeaderHash(asarPath);
+    uncacheAsar(asarPath);
+    return info;
   } finally {
     try {
       await cleanupTempTree(work);
@@ -98,34 +256,52 @@ export async function patchAsar(
   }
 }
 
-
-async function replaceAsarAtomically(stagingPath: string, asarPath: string): Promise<void> {
-  const win = process.platform === "win32";
+/**
+ * Replace dest with a fully-built staging asar.
+ *
+ * Windows: do not unlink the live mapped dest first. Overwrite dest with the
+ * validated staging bytes, fsync, uncache, then require a readable
+ * package.json before treating the replace as success.
+ *
+ * Unix: renameSync staging onto dest (existing atomic-ish behavior).
+ */
+export async function replaceAsarAtomically(
+  stagingPath: string,
+  asarPath: string,
+  hooks?: AsarReplaceHooks,
+): Promise<void> {
+  const win = (hooks?.platform ?? process.platform) === "win32";
+  const fs = resolveReplaceFs(hooks?.fs);
   const attempts = win ? 40 : 8;
   const delayMs = win ? 150 : 50;
+  const bytes = fs.readFileSync(stagingPath);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     asar.uncache(asarPath);
     asar.uncache(stagingPath);
     try {
       if (win) {
-        try { chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
-        try { unlinkSync(asarPath); } catch { /* dest still locked */ }
+        try { fs.chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
+        // Overwrite in place. Unlink-then-rename on Windows can leave dest as a
+        // delete-pending zero-filled file while this process still has it mapped.
+        fs.writeFileSync(asarPath, bytes);
+        fsyncPathWith(fs, asarPath);
+      } else {
+        fs.renameSync(stagingPath, asarPath);
       }
-      renameSync(stagingPath, asarPath);
-      asar.uncache(asarPath);
+      uncacheAsar(asarPath);
+      if (!asarHasReadablePackageJson(asarPath)) {
+        throw new Error("replaced asar is unreadable");
+      }
+      if (win) {
+        try { fs.unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
+      }
+      uncacheAsar(asarPath);
       return;
     } catch (e) {
       lastError = e;
-      if (!isTransientCleanupError(e) || attempt === attempts) throw e;
-      if (win) {
-        try {
-          cpSync(stagingPath, asarPath);
-          try { unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
-          asar.uncache(asarPath);
-          return;
-        } catch { /* dest still locked; retry */ }
-      }
+      const unreadable = e instanceof Error && e.message.includes("replaced asar is unreadable");
+      if (unreadable || !isTransientCleanupError(e) || attempt === attempts) throw e;
       await delay(delayMs);
     }
   }
