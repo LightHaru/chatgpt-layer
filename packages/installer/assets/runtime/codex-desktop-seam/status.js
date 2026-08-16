@@ -12,6 +12,7 @@ function emptyDesktopSpawnSeamStatus() {
         appServerArgsObserved: false,
         transportMode: null,
         observationCount: 0,
+        hookInstallError: null,
     };
 }
 function recordObservation(status, update) {

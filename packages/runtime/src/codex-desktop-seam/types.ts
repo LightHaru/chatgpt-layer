@@ -13,6 +13,8 @@ export type DesktopSpawnApi = "child_process.spawn";
 
 export type DesktopStdioTransportMode = "listen-stdio" | "stdio-flag";
 
+export type SpawnHookInstallError = "spawn-hook-unavailable";
+
 export interface DesktopSpawnSeamStatus {
   enabled: boolean;
   hookInstalled: boolean;
@@ -22,6 +24,7 @@ export interface DesktopSpawnSeamStatus {
   appServerArgsObserved: boolean;
   transportMode: DesktopStdioTransportMode | null;
   observationCount: number;
+  hookInstallError: SpawnHookInstallError | null;
 }
 
 export interface SanitizedSpawnObservation {

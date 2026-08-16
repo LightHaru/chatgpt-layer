@@ -8,6 +8,7 @@ export declare const UPSTREAM_APP_SERVER_STDIO_ARGV_FIXED: readonly ["app-server
 export declare const UPSTREAM_APP_SERVER_STDIO_SHORTHAND: readonly ["app-server", "--stdio"];
 export type DesktopSpawnApi = "child_process.spawn";
 export type DesktopStdioTransportMode = "listen-stdio" | "stdio-flag";
+export type SpawnHookInstallError = "spawn-hook-unavailable";
 export interface DesktopSpawnSeamStatus {
     enabled: boolean;
     hookInstalled: boolean;
@@ -17,6 +18,7 @@ export interface DesktopSpawnSeamStatus {
     appServerArgsObserved: boolean;
     transportMode: DesktopStdioTransportMode | null;
     observationCount: number;
+    hookInstallError: SpawnHookInstallError | null;
 }
 export interface SanitizedSpawnObservation {
     timestamp: string;

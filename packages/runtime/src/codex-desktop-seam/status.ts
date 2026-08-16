@@ -10,6 +10,7 @@ export function emptyDesktopSpawnSeamStatus(): DesktopSpawnSeamStatus {
     appServerArgsObserved: false,
     transportMode: null,
     observationCount: 0,
+    hookInstallError: null,
   };
 }
 

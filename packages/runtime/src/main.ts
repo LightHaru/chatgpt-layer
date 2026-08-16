@@ -108,9 +108,9 @@ import {
   setCodexSessionManager,
 } from "./codex-sessions";
 import { createCodexAppServerHost, setCodexAppServerHost } from "./codex-app-server/host";
-import * as nodeChildProcess from "node:child_process";
 import {
   collectDesktopTrustedRoots,
+  getSharedChildProcessModule,
   installDesktopAppServerSpawnProbe,
 } from "./codex-desktop-seam";
 import type {
@@ -140,25 +140,43 @@ if (process.env.CODEXPP_REMOTE_DEBUG === "1") {
 // MS-2B1: developer-only pass-through observer. Default OFF.
 // Loader requires this file before original Desktop main, so a JS spawn
 // that happens later can be seen. Does not wrap ChildProcess or stdio.
-installDesktopAppServerSpawnProbe({
-  spawnModule: nodeChildProcess,
-  env: process.env,
-  trustedRoots: () =>
-    collectDesktopTrustedRoots({
-      platform: process.platform,
-      resourcesPath: typeof process.resourcesPath === "string" ? process.resourcesPath : null,
-      appPath: (() => {
-        try {
-          const value = app.getAppPath();
-          return typeof value === "string" && value.length > 0 ? value : null;
-        } catch {
-          return null;
-        }
-      })(),
-    }),
-  log: (observation) => log("info", "desktop-spawn-probe", observation),
-  version: CODEX_PLUSPLUS_VERSION,
-});
+//
+// Patch the shared CommonJS `child_process` export (createRequire), not an
+// ESM namespace wrapper. esbuild's __toESM copies spawn onto getter-only
+// properties; mutating that wrapper would not be visible to a later
+// require("node:child_process") in Desktop main. Probe install failure
+// must not abort runtime/main.js evaluation.
+try {
+  const childProcessModule = getSharedChildProcessModule();
+  if (!childProcessModule) {
+    if (process.env.CODEXPP_APP_SERVER_PROBE === "1") {
+      log("warn", "desktop-spawn-probe", { category: "spawn-hook-unavailable" });
+    }
+  } else {
+    installDesktopAppServerSpawnProbe({
+      spawnModule: childProcessModule,
+      env: process.env,
+      trustedRoots: () =>
+        collectDesktopTrustedRoots({
+          platform: process.platform,
+          resourcesPath: typeof process.resourcesPath === "string" ? process.resourcesPath : null,
+          appPath: (() => {
+            try {
+              const value = app.getAppPath();
+              return typeof value === "string" && value.length > 0 ? value : null;
+            } catch {
+              return null;
+            }
+          })(),
+        }),
+      log: (observation) => log("info", "desktop-spawn-probe", observation),
+      onInstallError: (category) => log("warn", "desktop-spawn-probe", { category }),
+      version: CODEX_PLUSPLUS_VERSION,
+    });
+  }
+} catch {
+  log("warn", "desktop-spawn-probe", { category: "spawn-hook-unavailable" });
+}
 
 // Surface unhandled errors from anywhere in the main process to our log.
 process.on("uncaughtException", (e: Error & { code?: string }) => {

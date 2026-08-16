@@ -10,8 +10,10 @@ export type {
   DesktopStdioTransportMode,
   PathIo,
   SanitizedSpawnObservation,
+  SpawnHookInstallError,
   SpawnModule,
 } from "./types";
+export { getSharedChildProcessModule } from "./child-process-module";
 export {
   asStringArgv,
   classifySpawnCall,
@@ -38,12 +40,26 @@ let productionProbe: CodexDesktopSpawnProbe | null = null;
 
 export function installDesktopAppServerSpawnProbe(
   options: CodexDesktopSpawnProbeOptions,
-): CodexDesktopSpawnProbe {
-  if (!productionProbe) {
-    productionProbe = new CodexDesktopSpawnProbe(options);
+): CodexDesktopSpawnProbe | null {
+  try {
+    if (!productionProbe) {
+      productionProbe = new CodexDesktopSpawnProbe(options);
+    }
+    productionProbe.install();
+    return productionProbe;
+  } catch {
+    try {
+      options.onInstallError?.("spawn-hook-unavailable");
+    } catch {
+      // never abort Layer boot
+    }
+    return productionProbe;
   }
-  productionProbe.install();
-  return productionProbe;
+}
+
+/** Internal test restore for the production singleton. Not a tweak API. */
+export function uninstallDesktopAppServerSpawnProbe(): boolean {
+  return productionProbe?.uninstall() ?? false;
 }
 
 /** Internal getter only. Not exposed to tweaks or renderer IPC. */

@@ -321,6 +321,16 @@ When ON: wrap `node:child_process.spawn` only, call the original function,
 return the **exact** original child. No Proxy, no stdout listeners, no
 flowing mode, no stdin/stdout inspection.
 
+Production wiring uses `createRequire` to mutate the **shared CommonJS**
+`child_process` export. It must not patch an esbuild `__toESM` namespace
+wrapper — that object is getter-only and would not be visible to a later
+`require("node:child_process")` in Desktop main.
+
+If hook install cannot assign `.spawn` (or the assignment does not stick),
+the probe fail-closes: `hookInstalled=false`, sanitized category
+`spawn-hook-unavailable`, Layer boot continues. Install must never throw
+out of `runtime/main.js`.
+
 Not instrumented (no evidence they are Desktop's app-server path):
 `execFile`, `exec`, `execSync`, `spawnSync`, shell, `utilityProcess.fork`,
 `Module._load`. Fail closed rather than blanket-hooking.

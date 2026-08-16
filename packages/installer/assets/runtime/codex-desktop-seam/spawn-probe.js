@@ -11,6 +11,7 @@ class CodexDesktopSpawnProbe {
     env;
     trustedRoots;
     log;
+    onInstallError;
     platform;
     version;
     now;
@@ -18,12 +19,14 @@ class CodexDesktopSpawnProbe {
     status = (0, status_1.emptyDesktopSpawnSeamStatus)();
     diagnostics = [];
     originalSpawn = null;
+    wrapped = null;
     inHook = false;
     constructor(options) {
         this.spawnModule = options.spawnModule;
         this.env = options.env;
         this.trustedRoots = options.trustedRoots;
         this.log = options.log;
+        this.onInstallError = options.onInstallError;
         this.platform = options.platform ?? process.platform;
         this.version = options.version ?? "1.1.4";
         this.now = options.now ?? (() => new Date().toISOString());
@@ -37,25 +40,66 @@ class CodexDesktopSpawnProbe {
         return this.diagnostics.slice();
     }
     install() {
-        this.status.enabled = (0, candidate_1.isAppServerProbeEnabled)(this.env);
-        if (!this.status.enabled) {
-            this.status.hookInstalled = false;
-            this.status.spawnApi = null;
-            return;
-        }
-        const current = this.spawnModule.spawn;
-        if (current?.[HOOK_MARK]) {
+        try {
+            this.status.enabled = (0, candidate_1.isAppServerProbeEnabled)(this.env);
+            if (!this.status.enabled) {
+                this.status.hookInstalled = false;
+                this.status.spawnApi = null;
+                this.status.hookInstallError = null;
+                return;
+            }
+            const current = this.readSpawn();
+            if (this.wrapped && current === this.wrapped) {
+                this.status.hookInstalled = true;
+                this.status.spawnApi = "child_process.spawn";
+                this.status.hookInstallError = null;
+                return;
+            }
+            if (typeof current !== "function") {
+                this.failClosed();
+                return;
+            }
+            if (this.isMarked(current) && current !== this.wrapped) {
+                this.failClosed();
+                return;
+            }
+            const original = current;
+            const wrapped = this.makeWrapped(original);
+            this.originalSpawn = original;
+            this.wrapped = wrapped;
+            if (!this.assignSpawn(wrapped) || this.readSpawn() !== wrapped) {
+                this.tryRestore(original);
+                this.wrapped = null;
+                this.failClosed();
+                return;
+            }
             this.status.hookInstalled = true;
             this.status.spawnApi = "child_process.spawn";
-            return;
+            this.status.hookInstallError = null;
         }
-        if (this.originalSpawn) {
-            this.status.hookInstalled = true;
-            this.status.spawnApi = "child_process.spawn";
-            return;
+        catch {
+            this.failClosed();
         }
-        const original = this.spawnModule.spawn;
-        this.originalSpawn = original;
+    }
+    /**
+     * Internal test restore. Restores only if `.spawn` is still this probe's wrapper.
+     * A stale instance must not overwrite a newer wrapper.
+     */
+    uninstall() {
+        if (!this.wrapped || !this.originalSpawn)
+            return false;
+        if (this.readSpawn() !== this.wrapped)
+            return false;
+        const original = this.originalSpawn;
+        if (!this.assignSpawn(original) || this.readSpawn() !== original)
+            return false;
+        this.wrapped = null;
+        this.status.hookInstalled = false;
+        this.status.spawnApi = null;
+        this.status.hookInstallError = null;
+        return true;
+    }
+    makeWrapped(original) {
         const probe = this;
         const wrapped = function desktopSpawnProbe(...args) {
             if (probe.inHook) {
@@ -76,9 +120,47 @@ class CodexDesktopSpawnProbe {
             }
         };
         wrapped[HOOK_MARK] = true;
-        this.spawnModule.spawn = wrapped;
-        this.status.hookInstalled = true;
-        this.status.spawnApi = "child_process.spawn";
+        return wrapped;
+    }
+    readSpawn() {
+        try {
+            return this.spawnModule.spawn;
+        }
+        catch {
+            return undefined;
+        }
+    }
+    assignSpawn(value) {
+        try {
+            this.spawnModule.spawn = value;
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    tryRestore(original) {
+        try {
+            if (this.readSpawn() === this.wrapped)
+                this.assignSpawn(original);
+        }
+        catch {
+            // Best-effort restore only.
+        }
+    }
+    isMarked(value) {
+        return typeof value === "function" && Boolean(value[HOOK_MARK]);
+    }
+    failClosed() {
+        this.status.hookInstalled = false;
+        this.status.spawnApi = null;
+        this.status.hookInstallError = "spawn-hook-unavailable";
+        try {
+            this.onInstallError?.("spawn-hook-unavailable");
+        }
+        catch {
+            // Logging must never abort Layer boot.
+        }
     }
     observe(callArgs) {
         const classified = (0, candidate_1.classifySpawnCall)({
