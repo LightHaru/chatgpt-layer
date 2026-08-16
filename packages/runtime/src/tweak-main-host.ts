@@ -16,6 +16,7 @@ import {
   getRuntimeCapabilities,
   getRuntimeInfo,
   listCdpTargets,
+  windowSampleFrom,
 } from "./codex-runtime-probe";
 import type {
   CodexRuntimeCapabilities,
@@ -56,13 +57,13 @@ import {
   createCodexWindow,
   focusCodexWindow,
   getCodexWindowServices,
+  getPrimaryCodexWindow,
   getPrimaryCodexWindowRef,
   showCodexWindow,
 } from "./codex-windows";
 import {
   createOwlView,
   disposeOwlViewsForTweak,
-  getOwlViewCapabilities,
 } from "./owl-views";
 
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -377,6 +378,7 @@ export function currentRuntimeInfo(): CodexRuntimeInfo {
     codexVersion: installerState?.codexVersion ?? null,
     channel: null,
     getWindowServices: getCodexWindowServices,
+    env: liveProbeEnv(),
   });
 }
 
@@ -389,8 +391,14 @@ export function currentRuntimeCapabilities(): CodexRuntimeCapabilities {
     channel: null,
     getWindowServices: getCodexWindowServices,
     getNativeCapabilities: () => nativeBridge.getCapabilities(),
-    getViewCapabilities: () => getOwlViewCapabilities(),
+    env: liveProbeEnv(),
   });
+}
+
+function liveProbeEnv() {
+  return {
+    inspectExistingWindow: () => windowSampleFrom(getPrimaryCodexWindow()),
+  };
 }
 
 export function tweakContext(tweakId: string, permission?: TweakPermission): NativeTweakContext {

@@ -17,15 +17,17 @@ exports.isWindowDestroyed = isWindowDestroyed;
 exports.windowIdFor = windowIdFor;
 const electron_1 = require("electron");
 const runtime_paths_1 = require("./runtime-paths");
+const codex_runtime_probe_1 = require("./codex-runtime-probe");
 function getPrimaryCodexWindow() {
     const services = getCodexWindowServices();
-    const fromServices = typeof services?.getPrimaryWindow === "function"
-        ? services.getPrimaryWindow("local")
+    const inspected = (0, codex_runtime_probe_1.inspectWindowServices)(services);
+    const fromServices = inspected.getPrimaryWindow
+        ? services?.getPrimaryWindow?.("local") ?? null
         : null;
     if (fromServices && !fromServices.isDestroyed())
         return fromServices;
-    const fromManager = typeof services?.windowManager?.getPrimaryWindow === "function"
-        ? services.windowManager.getPrimaryWindow.call(services.windowManager)
+    const fromManager = inspected.getPrimaryWindowFromManager
+        ? services?.windowManager?.getPrimaryWindow?.call(services.windowManager) ?? null
         : null;
     if (fromManager && !fromManager.isDestroyed())
         return fromManager;
@@ -60,7 +62,8 @@ function showCodexWindow(windowId) {
 async function createCodexBrowserView(opts) {
     const services = getCodexWindowServices();
     const windowManager = services?.windowManager;
-    if (!services || !windowManager?.registerWindow) {
+    const inspected = (0, codex_runtime_probe_1.inspectWindowServices)(services);
+    if (!services || !windowManager?.registerWindow || !inspected.registerWindow) {
         throw new Error("Codex embedded view services are not available. Reinstall Codex++ 1.0.0 or later.");
     }
     const route = normalizeCodexRoute(opts.route);
@@ -83,7 +86,8 @@ async function createCodexBrowserView(opts) {
 }
 async function createCodexWindow(opts) {
     const services = getCodexWindowServices();
-    if (!services) {
+    const inspected = (0, codex_runtime_probe_1.inspectWindowServices)(services);
+    if (!services || !inspected.present) {
         throw new Error("Codex window services are not available. Reinstall Codex++ 1.0.0 or later.");
     }
     const route = normalizeCodexRoute(opts.route);
@@ -93,7 +97,7 @@ async function createCodexWindow(opts) {
         : electron_1.BrowserWindow.getFocusedWindow();
     const createWindow = services.windowManager?.createWindow;
     let win;
-    if (typeof createWindow === "function") {
+    if (inspected.createWindow && typeof createWindow === "function") {
         win = await createWindow.call(services.windowManager, {
             initialRoute: route,
             hostId,
@@ -102,13 +106,13 @@ async function createCodexWindow(opts) {
             parent,
         });
     }
-    else if (hostId === "local" && typeof services.createFreshWindow === "function") {
+    else if (hostId === "local" && inspected.createFreshWindow && typeof services.createFreshWindow === "function") {
         win = await services.createFreshWindow(route);
     }
-    else if (hostId === "local" && typeof services.createFreshLocalWindow === "function") {
+    else if (hostId === "local" && inspected.createFreshLocalWindow && typeof services.createFreshLocalWindow === "function") {
         win = await services.createFreshLocalWindow(route);
     }
-    else if (typeof services.ensureHostWindow === "function") {
+    else if (inspected.ensureHostWindow && typeof services.ensureHostWindow === "function") {
         win = await services.ensureHostWindow(hostId);
     }
     if (!win || win.isDestroyed()) {

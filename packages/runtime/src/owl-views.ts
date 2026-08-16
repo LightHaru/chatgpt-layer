@@ -16,6 +16,13 @@ import {
   normalizeOwlViewUrl,
   windowIdFor,
 } from "./codex-windows";
+import {
+  inspectViewAttachTargets,
+  probeRuntimeCompatibility,
+  viewsCapabilitiesFromSnapshot,
+  viewSampleFromConstructor,
+  windowSampleFrom,
+} from "./codex-runtime-probe";
 
 export type OwlViewAttachMode = "contentView" | "browserView";
 
@@ -41,30 +48,20 @@ export function markUntrustedWebContents(wc: Electron.WebContents): void {
 
 
 export function getOwlViewCapabilities(): CodexRuntimeCapabilities["views"] {
-  const parent = getPrimaryCodexWindow() ?? BrowserWindow.getFocusedWindow();
-  const contentView = asRecord(parent)?.contentView;
-  let sampleView: Electron.BrowserView | null = null;
-  try {
-    sampleView = new BrowserView({ webPreferences: { sandbox: true } });
-  } catch {}
-  const webContentsView = asRecord(sampleView)?.webContentsView;
-  const privateViewTree = typeof asRecord(contentView)?.addChildView === "function" &&
-    typeof asRecord(contentView)?.removeChildView === "function";
-  const webContentsViewAvailable = Boolean(webContentsView) &&
-    typeof asRecord(webContentsView)?.setBounds === "function";
-  const privateAttach = privateViewTree && webContentsViewAvailable;
-  const browserViewFallback = typeof asRecord(parent)?.addBrowserView === "function";
-  try {
-    if (sampleView && !sampleView.webContents.isDestroyed()) {
-      sampleView.webContents.close({ waitForBeforeUnload: false });
-    }
-  } catch {}
-  return {
-    create: privateAttach || browserViewFallback,
-    privateViewTree: privateAttach,
-    webContentsView: webContentsViewAvailable,
-    browserViewFallback,
-  };
+  const snapshot = probeRuntimeCompatibility({
+    userRoot: "",
+    runtimeDir: "",
+    codexVersion: null,
+    channel: null,
+    getWindowServices: getCodexWindowServices,
+    env: {
+      browserView: BrowserView,
+      browserWindow: BrowserWindow,
+      inspectExistingWindow: () => windowSampleFrom(getPrimaryCodexWindow() ?? BrowserWindow.getFocusedWindow()),
+      inspectBrowserView: () => viewSampleFromConstructor(BrowserView),
+    },
+  });
+  return viewsCapabilitiesFromSnapshot(snapshot);
 }
 
 export async function createOwlView(
@@ -185,14 +182,13 @@ export function owlViewRef(view: ManagedOwlView): CodexViewRef {
 }
 
 export function attachOwlView(view: ManagedOwlView, parent: Electron.BrowserWindow): void {
-  const contentView = asRecord(parent)?.contentView;
-  const webContentsView = asRecord(view.view)?.webContentsView;
-  if (typeof asRecord(parent)?.addBrowserView === "function") {
+  const targets = inspectViewAttachTargets(parent, view.view);
+  if (targets.addBrowserView) {
     callObjectMethod(parent, "addBrowserView", [view.view]);
     view.attachMode = "browserView";
   } else if (
-    typeof asRecord(contentView)?.addChildView === "function" &&
-    webContentsView
+    targets.addChildView &&
+    targets.webContentsView
   ) {
     try {
       addOwlChildView(parent, view.view);
