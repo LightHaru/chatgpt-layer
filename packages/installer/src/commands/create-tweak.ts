@@ -5,7 +5,7 @@ import {
   validateTweakManifest,
   type TweakManifest,
   type TweakScope,
-} from "@codex-plusplus/sdk";
+} from "../bundled-sdk.js";
 
 interface CreateTweakOpts {
   id?: string;
