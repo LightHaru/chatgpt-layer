@@ -5,11 +5,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -542,37 +540,6 @@ export async function captureLogs(fn: () => Promise<void> | void): Promise<strin
     console.warn = warn;
     console.error = error;
   }
-}
-
-export function walkFiles(root: string): string[] {
-  const out: string[] = [];
-  if (!existsSync(root)) return out;
-  const stack = [root];
-  while (stack.length) {
-    const dir = stack.pop()!;
-    for (const name of readdirSync(dir)) {
-      const target = join(dir, name);
-      try {
-        const st = statSync(target);
-        if (st.isDirectory()) stack.push(target);
-        else out.push(target);
-      } catch {}
-    }
-  }
-  return out;
-}
-
-export function assertAllWritesUnder(h: InstallerHarness, extraAllowed: string[] = []): void {
-  const allowed = [h.testRoot, ...extraAllowed].map((p) => resolve(p));
-  for (const file of [...walkFiles(h.userData), ...walkFiles(h.app.appRoot)]) {
-    const resolved = resolve(file);
-    const ok =
-      allowed.some((root) => resolved === root || resolved.startsWith(root + sep))
-      || resolved === osTmp
-      || resolved.startsWith(osTmp + sep);
-    if (!ok) throw new Error(`write escaped fixture: ${resolved}`);
-  }
-  assertPathSafety(h);
 }
 
 export function headerHash(asarPath: string): string {
