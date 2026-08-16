@@ -63,6 +63,19 @@ test("asarHasReadablePackageJson accepts a packed asar with valid JSON", async (
   }
 });
 
+test("just-packed asar is readable from a copied unique path", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-copy-probe-"));
+  try {
+    const archive = await packFixture(root, { name: "ok", main: "main.js" });
+    const probe = join(root, "probe-unique.asar");
+    writeFileSync(probe, readFileSync(archive));
+    assert.notEqual(probe, archive);
+    assert.equal(asarHasReadablePackageJson(probe), true);
+  } finally {
+    await cleanupTempTree(root);
+  }
+});
+
 test("asarHasReadablePackageJson rejects empty, zeroed, and invalid archives", async () => {
   const root = mkdtempSync(join(tmpdir(), "codexpp-asar-unreadable-"));
   try {

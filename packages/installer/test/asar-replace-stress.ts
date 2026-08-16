@@ -14,7 +14,7 @@ import {
 } from "./helpers/fake-chatgpt-app";
 import { asarHasReadablePackageJson } from "../src/asar";
 
-const reps = Math.max(1, Number(process.env.ASAR_REPLACE_STRESS_REPS ?? "5") || 5);
+const reps = Math.max(1, Number(process.env.ASAR_REPLACE_STRESS_REPS ?? "50") || 50);
 
 test(`install -> repair -> repair stays healthy across ${reps} isolated fixtures`, async () => {
   for (let i = 0; i < reps; i++) {

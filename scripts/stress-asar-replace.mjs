@@ -6,7 +6,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const reps = process.env.ASAR_REPLACE_STRESS_REPS || "50";
 const result = spawnSync(
   process.execPath,
-  ["--import", "tsx", "--test", "packages/installer/test/asar-replace-stress.test.ts"],
+  ["--import", "tsx", "--test", "packages/installer/test/asar-replace-stress.ts"],
   {
     cwd: root,
     stdio: "inherit",

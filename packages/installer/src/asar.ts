@@ -10,7 +10,7 @@ import asar from "@electron/asar";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 export interface AsarHeaderInfo {
@@ -64,6 +64,28 @@ export function asarHasReadablePackageJson(asarPath: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Validate asar bytes without extractFile on the just-written path.
+ * @electron/asar caches Filesystem objects by path; createPackage output can
+ * then look NUL/unreadable even when the file bytes are fine. Copy to a unique
+ * inode/path, then validate that copy. Fail closed if the copy is unreadable.
+ */
+function asarBytesHaveReadablePackageJson(asarPath: string, workDir: string): boolean {
+  const probe = join(workDir, `check-${process.hrtime.bigint().toString(16)}.asar`);
+  try {
+    asar.uncache(asarPath);
+    writeFileSync(probe, readFileSync(asarPath));
+    try { fsyncPath(probe); } catch { /* ignore */ }
+    uncacheAsar(probe);
+    return asarHasReadablePackageJson(probe);
+  } catch {
+    return false;
+  } finally {
+    asar.uncache(probe);
+    try { unlinkSync(probe); } catch { /* ignore */ }
   }
 }
 
@@ -132,9 +154,9 @@ export async function patchAsar(
       globOptions: { dot: true },
       ...originalUnpackOptions,
     });
-    asar.uncache(outAsar);
+    uncacheAsar(outAsar);
     try { fsyncPath(outAsar); } catch { /* ignore */ }
-    if (!asarHasReadablePackageJson(outAsar)) {
+    if (!asarBytesHaveReadablePackageJson(outAsar, work)) {
       throw new Error("packed asar is unreadable");
     }
 
@@ -150,8 +172,8 @@ export async function patchAsar(
     } catch (e) {
       throw annotatePermError(e, asarPath);
     }
-    asar.uncache(stagingPath);
-    if (!asarHasReadablePackageJson(stagingPath)) {
+    uncacheAsar(stagingPath);
+    if (!asarBytesHaveReadablePackageJson(stagingPath, work)) {
       try { unlinkSync(stagingPath); } catch { /* dest was not touched */ }
       throw new Error("staged asar is unreadable");
     }
@@ -164,9 +186,10 @@ export async function patchAsar(
     // in place must drop that cache or later extractFile/extractAll reads
     // the old header against the new bytes.
     uncacheAsar(asarPath);
-    if (!asarHasReadablePackageJson(asarPath)) {
+    if (!asarBytesHaveReadablePackageJson(asarPath, work)) {
       throw new Error("replaced asar is unreadable");
     }
+    uncacheAsar(asarPath);
     const info = readHeaderHash(asarPath);
     uncacheAsar(asarPath);
     return info;
@@ -213,7 +236,7 @@ export async function replaceAsarAtomically(
         fs.renameSync(stagingPath, asarPath);
       }
       uncacheAsar(asarPath);
-      if (!asarHasReadablePackageJson(asarPath)) {
+      if (!asarBytesHaveReadablePackageJson(asarPath, dirname(asarPath))) {
         throw new Error("replaced asar is unreadable");
       }
       if (win) {
