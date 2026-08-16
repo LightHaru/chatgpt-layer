@@ -50,6 +50,21 @@ function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), "codexpp-app-server-"));
 }
 
+async function removeRoot(root: string): Promise<void> {
+  for (let i = 0; i < 8; i++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "ENOTEMPTY" && code !== "EPERM") throw error;
+      await new Promise((resolve) => setTimeout(resolve, 40 * (i + 1)));
+    }
+  }
+  rmSync(root, { recursive: true, force: true });
+}
+
+
 async function runningSession(root: string) {
   const lifecycle = new LifecycleLauncher();
   const mgr = new CodexSessionManager({ userRoot: root, launcher: lifecycle, stopTimeoutMs: 30, killTimeoutMs: 30 });
@@ -163,7 +178,7 @@ test("multi-session fake transports isolate correlation, notifications, and cras
     assert.equal((restarted.result as { thread: { id: string } }).thread.id.startsWith("thread_a2_"), true);
     await registry.closeAll();
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    await removeRoot(root);
   }
 });
 
@@ -208,7 +223,7 @@ test("registry attaches a transport without launching a second child", async () 
     void launcher;
     await registry.closeAll();
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    await removeRoot(root);
   }
 });
 
@@ -278,6 +293,6 @@ test("fixture child stdio initialize, thread/start, crash, malformed, delayed", 
     );
     await bad.closeAll();
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    await removeRoot(root);
   }
 });

@@ -4,7 +4,7 @@ exports.createFailClosedAppServerLauncher = createFailClosedAppServerLauncher;
 exports.createFixtureAppServerLauncher = createFixtureAppServerLauncher;
 exports.createInjectedAppServerLauncher = createInjectedAppServerLauncher;
 const node_child_process_1 = require("node:child_process");
-const node_path_1 = require("node:path");
+const node_os_1 = require("node:os");
 const launcher_1 = require("../codex-sessions/launcher");
 const child_transport_1 = require("./child-transport");
 const discovery_1 = require("./discovery");
@@ -38,7 +38,7 @@ function createFixtureAppServerLauncher(options) {
             try {
                 child = spawnImpl(options.nodeExecutable, [options.fixturePath, ...fixtureArgs], {
                     env: (0, launcher_1.isolatedSessionEnv)(intent),
-                    cwd: (0, node_path_1.dirname)(intent.codexHome),
+                    cwd: (0, node_os_1.tmpdir)(),
                     stdio: ["pipe", "pipe", "pipe"],
                     windowsHide: true,
                 });

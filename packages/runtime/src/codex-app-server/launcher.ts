@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { dirname } from "node:path";
+import { tmpdir } from "node:os";
 import type { CodexSessionLaunchIntent } from "../codex-sessions/launcher";
 import { isolatedSessionEnv } from "../codex-sessions/launcher";
 import { StdioAppServerTransport } from "./child-transport";
@@ -66,7 +66,7 @@ export function createFixtureAppServerLauncher(
       try {
         child = spawnImpl(options.nodeExecutable, [options.fixturePath, ...fixtureArgs], {
           env: isolatedSessionEnv(intent as CodexSessionLaunchIntent),
-          cwd: dirname(intent.codexHome),
+          cwd: tmpdir(),
           stdio: ["pipe", "pipe", "pipe"],
           windowsHide: true,
         } satisfies SpawnOptions);
