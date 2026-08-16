@@ -59,7 +59,7 @@ Repair is install rerun with extra short-circuits:
    - Skip restore if the current asar does not look patched (no marker and hash is not `patchedAsarHash`). This includes "already original" and "upstream replaced the app".
    - macOS prefers a full `backup/Codex.app` when that tree looks usable.
    - Otherwise restore `backup/app.asar` (and unpacked/plist/framework if present).
-   - Missing backup while the app is still patched **throws** (`No backup found`). It does not invent a restore.
+   - Missing backup while the app is still patched **throws** (`No original app.asar backup found`). It does not invent a restore.
    - Partial restore after a recorded Codex version change **throws**.
 4. `uninstallWatcher()` plus Windows managed-artifact cleanup.
 5. Delete `runtime/` and `state.json` only. Tweaks, config, logs, backups, and `tweak-data/` stay. `--purge` deletes the entire user-data root.

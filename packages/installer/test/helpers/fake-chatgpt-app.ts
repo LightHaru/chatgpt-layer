@@ -9,6 +9,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, platform, tmpdir } from "node:os";
@@ -172,9 +173,36 @@ function macInfoPlist(version: string): string {
   <key>CFBundleName</key><string>ChatGPT</string>
   <key>CFBundleExecutable</key><string>ChatGPT</string>
   <key>CFBundleIdentifier</key><string>com.openai.codex</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>${version}</string>
 </dict></plist>
 `;
+}
+
+
+function writeFakeElectronFramework(appRoot: string): void {
+  const frameworkRoot = join(appRoot, "Contents", "Frameworks", "Electron Framework.framework");
+  const versionA = join(frameworkRoot, "Versions", "A");
+  mkdirSync(join(versionA, "Resources"), { recursive: true });
+  writeFileSync(join(versionA, "Electron Framework"), "fake-electron-framework\n");
+  writeFileSync(
+    join(versionA, "Resources", "Info.plist"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleExecutable</key><string>Electron Framework</string>
+  <key>CFBundleIdentifier</key><string>com.github.Electron.framework</string>
+  <key>CFBundleName</key><string>Electron Framework</string>
+  <key>CFBundlePackageType</key><string>FMWK</string>
+  <key>CFBundleVersion</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+</dict></plist>
+`,
+  );
+  symlinkSync("A", join(frameworkRoot, "Versions", "Current"));
+  symlinkSync("Versions/Current/Electron Framework", join(frameworkRoot, "Electron Framework"));
+  symlinkSync("Versions/Current/Resources", join(frameworkRoot, "Resources"));
 }
 
 export async function createFakeChatGptApp(
@@ -187,24 +215,15 @@ export async function createFakeChatGptApp(
     const appRoot = join(parent, "ChatGPT.app");
     const resourcesDir = join(appRoot, "Contents", "Resources");
     const macosDir = join(appRoot, "Contents", "MacOS");
-    const frameworkDir = join(
-      appRoot,
-      "Contents",
-      "Frameworks",
-      "Electron Framework.framework",
-      "Versions",
-      "A",
-    );
     mkdirSync(resourcesDir, { recursive: true });
     mkdirSync(macosDir, { recursive: true });
-    mkdirSync(frameworkDir, { recursive: true });
+    writeFakeElectronFramework(appRoot);
     const asarPath = join(resourcesDir, "app.asar");
     await writeSyntheticAsar(asarPath, opts);
     writeFileSync(join(appRoot, "Contents", "Info.plist"), macInfoPlist(version));
     const executable = join(macosDir, "ChatGPT");
     writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     chmodSync(executable, 0o755);
-    writeFileSync(join(frameworkDir, "Electron Framework"), "fake-electron-framework\n");
     const unrelatedAppFile = join(resourcesDir, "unrelated-keep.txt");
     writeFileSync(unrelatedAppFile, "app-unrelated\n");
     return {

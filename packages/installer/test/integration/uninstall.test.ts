@@ -150,7 +150,7 @@ test("missing backup refuses to uninstall a patched app", async () => {
     rmSync(backupAsarPath(h.paths), { force: true });
     await assert.rejects(
       () => uninstall({ app: h.app.appRoot }),
-      /No backup found/,
+      /No original app\.asar backup found|No backup found/,
     );
     assert.equal(isPatchedAsar(h.app.asarPath), true);
   });
