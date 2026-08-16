@@ -57,7 +57,7 @@ function makeProbe(opts: {
     env: opts.enabled === false ? {} : { CODEXPP_APP_SERVER_PROBE: "1" },
     trustedRoots: opts.trustedRoots ?? (() => opts.roots),
     platform: opts.platform ?? "linux",
-    version: "1.1.4",
+    version: "1.1.5",
     now: () => "2026-08-17T00:00:00.000Z",
     io: opts.io ?? identityIo(),
     log: opts.log,
