@@ -17,9 +17,13 @@ Include:
 
 ## Tweak Update Policy
 
-Tweaks are local code and should be treated as untrusted until reviewed. Codex++ checks GitHub Releases once per day and displays update availability, but it never downloads, installs, or replaces tweak code automatically.
+Tweaks are unsandboxed local code and should be treated as untrusted until reviewed.
 
-Before updating a tweak, review the release notes, changed files, repository ownership, and any new permissions or network behavior.
+GitHub Release checks can show that a store-listed tweak has a newer semver tag. Store **Update** / **Install** only downloads the `approvedCommitSha` listed in `store/index.json`. It does not install an unpinned latest GitHub Release. The user must click Update; Layer does not replace tweak files in the background.
+
+Layer self-update is opt-in and defaults off.
+
+Before updating a tweak, review the pinned commit, release notes, changed files, repository ownership, and any new permissions or network behavior.
 
 ## Runtime Boundaries
 

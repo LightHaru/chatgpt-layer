@@ -1,8 +1,28 @@
 # Changelog
 
-All notable changes to ChatGPT Layer (fork of Codex++) are documented here.
+All notable changes to ChatGPT Layer are documented here. The project is based on Codex++ (MIT).
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
+
+## 1.1.3
+
+Security pins that landed on main after 1.1.2, plus standalone product docs.
+
+### Security
+
+- Store Update/Install uses listed `approvedCommitSha` only.
+- Layer self-update defaults off (opt-in).
+- Privileged IPC is gated to ChatGPT/Layer frames.
+- `doctor` notes the Win/Linux asar integrity writer / fuse gap: sidecar writer is unimplemented and `EnableEmbeddedAsarIntegrityValidation` is left ON.
+
+### Changed
+
+- README is a standalone bilingual product page. Credits Codex++ (based on, MIT) after leaving the GitHub fork network.
+- SECURITY.md and ARCHITECTURE.md match store pin + opt-in self-update (no longer advisory-only / silent hourly Layer updates).
+
+### Ghi chú
+
+README đứng độc lập, ghi công Codex++. Store Update chỉ cài SHA đã ghim. Self-update Layer mặc định tắt.
 
 ## 1.1.2
 

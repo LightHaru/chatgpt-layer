@@ -37,9 +37,9 @@
 
 ## Tweak update checks
 
-Tweak updates are deliberately advisory. `manifest.json` must include `githubRepo` in `owner/repo` form. The main process checks GitHub Releases at most once per day per tweak and caches the result in `<user-data-dir>/state.json`.
+GitHub Release checks for non-store tweaks stay advisory. `manifest.json` must include `githubRepo` in `owner/repo` form. The main process checks GitHub Releases at most once per day per tweak and caches the result in `<user-data-dir>/state.json`.
 
-The renderer only receives cached metadata (`latestVersion`, `releaseUrl`, `updateAvailable`) and can open the GitHub release for review. There is no automatic download, install, or replacement path in the runtime.
+Store-listed **Update** / **Install** (1.1.3) downloads the `approvedCommitSha` from `store/index.json` only — not an unpinned latest release. The user must click Update/Install; there is no silent background replace.
 
 ## Boot sequence
 
@@ -117,13 +117,13 @@ When Codex auto-updates via Sparkle:
 4. The watcher runs `codex-plusplus repair --quiet`.
 5. `repair` is idempotent: if the current asar hash still matches `patchedAsarHash`, it exits without touching the app; if the hash drifted after an update, it re-runs the install patch against the new app bundle.
 
-## Codex++ self-updates
+## Layer self-updates
 
-The watcher also runs hourly using the GitHub-installed local CLI at `~/.codex-plusplus/source/packages/installer/dist/cli.js`. It checks the latest Codex++ GitHub Release, downloads and rebuilds a newer release when available, then runs `repair`. When the app patch is intact but the installed Codex++ version in `state.json` is older than the running CLI, `repair` refreshes `<user-data-dir>/runtime/` and updates state. It does not modify user tweak folders.
+Layer self-update defaults off (opt-in, 1.1.3). The watcher still repairs the app patch after a ChatGPT update. Intact-app runtime refreshes and GitHub self-updates are skipped unless the user enables them.
 
-Users can disable Codex++ runtime auto-updates from Settings → Codex Plus Plus → Config. The setting is stored in `<user-data-dir>/config.json`; app-update repair still works, but intact-app runtime refreshes are skipped while auto-update is disabled.
+When enabled, the watcher uses the GitHub-installed local CLI at `~/.codex-plusplus/source/packages/installer/dist/cli.js`. It can check the latest ChatGPT Layer GitHub Release, download and rebuild, then run `repair`. When the app patch is intact but the installed version in `state.json` is older than the running CLI, `repair` refreshes `<user-data-dir>/runtime/` and updates state. It does not modify user tweak folders.
 
-The Config page can also check for Codex++ updates manually. It reads GitHub release metadata and opens GitHub release pages for review.
+The setting is stored in `<user-data-dir>/config.json`. The Config page can also check for Layer updates manually.
 
 ## What's not protected against
 

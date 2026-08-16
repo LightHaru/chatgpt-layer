@@ -14,9 +14,10 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.1.2-4F8CFF?style=flat-square">
+  <img alt="version" src="https://img.shields.io/badge/version-1.1.3-4F8CFF?style=flat-square">
   <img alt="platforms" src="https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux-3b82f6?style=flat-square">
   <img alt="unofficial" src="https://img.shields.io/badge/unofficial-not%20affiliated%20with%20OpenAI-111827?style=flat-square">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-111827?style=flat-square">
 </p>
 
 ChatGPT Layer patches the ChatGPT desktop app so a local runtime can load tweaks from your user data — extra Settings pages, UI changes, main-process code. The app stays ChatGPT. Tweaks live on your machine, not inside the bundle.
@@ -37,10 +38,12 @@ Unofficial. Not affiliated with OpenAI.
 - Runtime and tweaks live in your user data. The patch inside `app.asar` is small.
 - CLI for install, status, repair, update, and tweak development (`chatgpt-layer` / `cgl` / `codexplusplus`).
 - In-app Tweak Store. Right now the only listing is [Codex Accounts](https://github.com/LightHaru/codex-plusplus-accounts) (`me.lightharu.codex-accounts`) by LightHaru.
-- When a store-listed tweak has a newer GitHub Release, Tweaks shows a badge and a one-click **Update** (1.1.2).
+- Store **Update** / **Install** only installs the `approvedCommitSha` pinned in `store/index.json` (1.1.3). A newer GitHub Release can badge the Tweaks page; the button does not pull an unpinned latest tag.
 - Existing tweaks keep working: SDK is still `api.codex.*`, folders still named `tweaks`.
 
 ## Install
+
+The one-liners track `main`. Prefer a tagged GitHub release, or clone and build, if you want a pinned tree.
 
 **Windows (PowerShell)**
 
@@ -74,7 +77,7 @@ Aliases: `chatgpt-layer`, `cgl`, `codexplusplus`.
 | `chatgpt-layer status` | Show installed version and patch state. |
 | `chatgpt-layer debug` | App path, runtime, paths, open state, bridge. |
 | `chatgpt-layer repair` | Re-apply the patch after an app update. |
-| `chatgpt-layer update` | Update Layer from the latest GitHub release. |
+| `chatgpt-layer update` | Update Layer from a GitHub release. Self-update is opt-in (default off). |
 | `chatgpt-layer doctor` | Diagnose signatures, integrity, permissions. |
 | `chatgpt-layer safe-mode` | Disable all tweaks without deleting them. |
 | `chatgpt-layer uninstall` | Remove the loader and restore the app when safe. |
@@ -109,7 +112,7 @@ The only listing today is **Codex Accounts** (`me.lightharu.codex-accounts`) by 
 
 SDK APIs stay `api.codex.*`. Internal folders stay `tweaks`. Old tweaks do not need a rename.
 
-From 1.1.2, if a **store-listed** tweak has a newer GitHub Release (semver tag), Tweaks shows **Update Available**, a banner, and an **Update** button that installs from that release. Authors must cut a GitHub Release for detection. This is not silent: you click Update.
+From 1.1.2, store-listed tweaks can show **Update Available** when a newer GitHub Release (semver tag) exists. From 1.1.3, **Update** / **Install** only installs the `approvedCommitSha` listed in the store — not an unpinned latest GitHub Release. Authors still cut a GitHub Release for detection. This is not silent: you click Update.
 
 ## Updates and repair
 
@@ -119,15 +122,15 @@ Microsoft Store / app updates usually strip the patch. Fully quit `ChatGPT.exe` 
 chatgpt-layer repair
 ```
 
-Update Layer itself with `chatgpt-layer update`.
+Update Layer itself with `chatgpt-layer update`. Layer self-update is opt-in and defaults off (1.1.3). Repair after a ChatGPT app update still works.
 
-Tweak updates (store-listed, 1.1.2): the Tweaks sidebar badge counts pending GitHub Release updates. Open Tweaks and click **Update** — Layer installs from that release instead of only opening the URL.
+Tweak updates (store-listed): the Tweaks sidebar badge counts pending updates. Open Tweaks and click **Update** — Layer installs the pinned `approvedCommitSha` from `store/index.json`, not an unpinned latest tag.
 
 ## Security
 
-Tweaks are local code running inside ChatGPT. Install only from sources you trust.
+Tweaks are unsandboxed local code running inside ChatGPT. Install only from sources you trust.
 
-GitHub Release install is user-clicked, not silent. Layer does not push tweak files in the background.
+Store Update/Install only installs SHAs pinned in `store/index.json` (1.1.3). Layer self-update is opt-in (default off). Privileged IPC is gated to ChatGPT/Layer frames.
 
 See [Security](SECURITY.md).
 
@@ -178,7 +181,7 @@ chatgpt-layer validate-tweak ./my-tweak
 chatgpt-layer dev ./my-tweak
 ```
 
-APIs are still `api.codex.*`. Full guide: [Writing Tweaks](docs/WRITING-TWEAKS.md). Store-listed tweaks that want in-app Update need a GitHub Release with a semver tag.
+APIs are still `api.codex.*`. Full guide: [Writing Tweaks](docs/WRITING-TWEAKS.md). Store-listed tweaks that want in-app Update need a GitHub Release with a semver tag, and the store must pin `approvedCommitSha`.
 
 ## More docs
 
@@ -187,9 +190,11 @@ APIs are still `api.codex.*`. Full guide: [Writing Tweaks](docs/WRITING-TWEAKS.m
 - [Writing Tweaks](docs/WRITING-TWEAKS.md)
 - [Tweak API](docs/tweaks/api-reference.md)
 
-## Credits
+## Acknowledgments
 
-[Bennett](https://github.com/b-nnett) ([@b-nnett](https://github.com/b-nnett)) built the original Codex++ loader. ChatGPT Layer keeps those data paths and `api.codex.*` so existing tweaks keep working.
+ChatGPT Layer is a standalone project **based on** [Codex++](https://github.com/b-nnett/codex-plusplus) by [Bennett](https://github.com/b-nnett) ([@b-nnett](https://github.com/b-nnett)) (MIT). Upstream is archived; this repo continues that work for the ChatGPT desktop app. It is not a GitHub fork.
+
+Data paths and `api.codex.*` stay the same so existing tweaks keep working.
 
 [Alex Naidis](https://github.com/TheCrazyLex) ([@TheCrazyLex](https://github.com/TheCrazyLex)) — macOS permission hardening.
 
@@ -215,10 +220,12 @@ Không chính thức. Không liên kết với OpenAI.
 - Runtime và tweak nằm ở user data. Phần vá trong `app.asar` nhỏ.
 - CLI để cài, xem status, repair, update, và viết tweak (`chatgpt-layer` / `cgl` / `codexplusplus`).
 - Tweak Store trong app. Hiện chỉ có [Codex Accounts](https://github.com/LightHaru/codex-plusplus-accounts) (`me.lightharu.codex-accounts`) của LightHaru.
-- Tweak trên Store có GitHub Release mới thì trang Tweaks hiện badge và nút **Update** một click (1.1.2).
+- **Update** / **Install** trên Store chỉ cài `approvedCommitSha` đã ghim trong `store/index.json` (1.1.3). GitHub Release mới có thể hiện badge; nút không kéo tag latest chưa ghim.
 - Tweak cũ vẫn chạy: SDK vẫn `api.codex.*`, thư mục vẫn tên `tweaks`.
 
 ## Cài đặt
+
+One-liner theo `main`. Muốn cây ghim thì dùng GitHub Release có tag, hoặc clone rồi build.
 
 **Windows (PowerShell)**
 
@@ -252,7 +259,7 @@ Alias: `chatgpt-layer`, `cgl`, `codexplusplus`.
 | `chatgpt-layer status` | Hiện version và trạng thái patch. |
 | `chatgpt-layer debug` | Đường dẫn app, runtime, path, bridge. |
 | `chatgpt-layer repair` | Vá lại sau khi app update. |
-| `chatgpt-layer update` | Cập nhật Layer từ GitHub release mới nhất. |
+| `chatgpt-layer update` | Cập nhật Layer từ GitHub release. Self-update là opt-in (mặc định tắt). |
 | `chatgpt-layer doctor` | Kiểm tra chữ ký, integrity, quyền. |
 | `chatgpt-layer safe-mode` | Tắt hết tweak, không xóa. |
 | `chatgpt-layer uninstall` | Gỡ loader, restore app khi an toàn. |
@@ -287,7 +294,7 @@ Hiện chỉ có **Codex Accounts** (`me.lightharu.codex-accounts`) của LightH
 
 SDK vẫn `api.codex.*`. Thư mục trong máy vẫn tên `tweaks`. Tweak cũ không cần đổi tên.
 
-Từ 1.1.2, nếu tweak **nằm trên Store** có GitHub Release mới (tag semver), trang Tweaks hiện **Update Available**, banner, và nút **Update** cài từ release đó. Tác giả phải cắt GitHub Release thì Layer mới phát hiện. Không tự cài im lặng: bạn bấm Update.
+Từ 1.1.2, tweak trên Store có GitHub Release mới (tag semver) thì Tweaks hiện **Update Available**. Từ 1.1.3, nút **Update** / **Install** chỉ cài `approvedCommitSha` ghi trong store — không phải bản latest chưa ghim trên GitHub Release. Tác giả vẫn cần cắt GitHub Release thì Layer mới phát hiện. Không tự cài im lặng: bạn bấm Update.
 
 ## Cập nhật và repair
 
@@ -297,15 +304,15 @@ Update Store / app thường gỡ mất patch. Tắt hẳn `ChatGPT.exe` rồi c
 chatgpt-layer repair
 ```
 
-Cập nhật Layer: `chatgpt-layer update`.
+Cập nhật Layer: `chatgpt-layer update`. Self-update Layer là opt-in, mặc định tắt (1.1.3). Repair sau khi app ChatGPT update vẫn chạy.
 
-Cập nhật tweak (trên Store, 1.1.2): badge trên sidebar Tweaks đếm số bản GitHub Release đang chờ. Vào Tweaks, bấm **Update** — Layer cài từ release đó, không chỉ mở URL.
+Cập nhật tweak (trên Store): badge trên sidebar Tweaks đếm số bản đang chờ. Vào Tweaks, bấm **Update** — Layer cài `approvedCommitSha` đã ghim trong `store/index.json`, không kéo tag latest chưa ghim.
 
 ## Bảo mật
 
-Tweak là code local chạy bên trong ChatGPT. Chỉ cài từ nguồn bạn tin.
+Tweak là code local không sandbox, chạy bên trong ChatGPT. Chỉ cài từ nguồn bạn tin.
 
-Cài từ GitHub Release do bạn bấm, không chạy ngầm. Layer không tự đẩy file tweak.
+Store Update/Install chỉ cài SHA đã ghim trong `store/index.json` (1.1.3). Self-update Layer là opt-in (mặc định tắt). IPC đặc quyền chỉ mở cho frame ChatGPT/Layer.
 
 Xem [Security](SECURITY.md).
 
@@ -356,7 +363,7 @@ chatgpt-layer validate-tweak ./my-tweak
 chatgpt-layer dev ./my-tweak
 ```
 
-API vẫn `api.codex.*`. Hướng dẫn đầy đủ: [Writing Tweaks](docs/WRITING-TWEAKS.md). Tweak trên Store muốn Update trong app thì cần GitHub Release với tag semver.
+API vẫn `api.codex.*`. Hướng dẫn đầy đủ: [Writing Tweaks](docs/WRITING-TWEAKS.md). Tweak trên Store muốn Update trong app thì cần GitHub Release với tag semver, và store phải ghim `approvedCommitSha`.
 
 ## Tài liệu thêm
 
@@ -367,7 +374,9 @@ API vẫn `api.codex.*`. Hướng dẫn đầy đủ: [Writing Tweaks](docs/WRIT
 
 ## Cảm ơn
 
-[Bennett](https://github.com/b-nnett) ([@b-nnett](https://github.com/b-nnett)) làm loader Codex++ gốc. ChatGPT Layer giữ path dữ liệu và `api.codex.*` để tweak cũ vẫn chạy.
+ChatGPT Layer là dự án độc lập **dựa trên** [Codex++](https://github.com/b-nnett/codex-plusplus) của [Bennett](https://github.com/b-nnett) ([@b-nnett](https://github.com/b-nnett)) (MIT). Upstream đã archive; repo này tiếp tục công việc đó cho app ChatGPT desktop. Đây không còn là GitHub fork.
+
+Giữ nguyên path dữ liệu và `api.codex.*` để tweak cũ vẫn chạy.
 
 [Alex Naidis](https://github.com/TheCrazyLex) ([@TheCrazyLex](https://github.com/TheCrazyLex)) — siết quyền khi cài trên macOS.
 
