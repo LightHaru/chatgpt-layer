@@ -24,14 +24,16 @@ export interface CodexSessionTransportRegistryOptions {
  * Ownership:
  * - Before the registry accepts a transport (mismatch, duplicate, in-progress):
  *   reject without closing or rewriting that transport.
- * - After reservation / bind: the registry owns registration lifecycle and
- *   closes the transport on handshake failure, stop, or closeAll.
+ * - After reservation / bind: the registry owns the concrete transport and
+ *   closes it on handshake failure, stop, closeAll, session-removed, or
+ *   closed-during-handshake.
  */
 export declare class CodexSessionTransportRegistry {
     private readonly sessionManager;
     private readonly initializeParams;
     private readonly initializeTimeoutMs?;
     private readonly records;
+    /** In-flight attachAndInitialize: sessionId → the reserved transport. */
     private readonly attaching;
     private closed;
     constructor(options: CodexSessionTransportRegistryOptions);
@@ -46,15 +48,19 @@ export declare class CodexSessionTransportRegistry {
     /**
      * Attach then run initialize / initialized on that same transport.
      * Still does not spawn a child. Handshake runs only after identity checks
-     * and an exclusive reservation.
+     * and an exclusive reservation that owns this transport.
      */
     attachAndInitialize(sessionId: string, transport: CodexAppServerTransport): Promise<SessionTransportRecord>;
     /**
-     * Reject new work, close transport. Does not stop any MS-1 lifecycle child.
+     * Reject new work, close bound and/or in-flight handshake transport.
+     * Does not stop any MS-1 lifecycle child.
      * Future MS-2B: stop is one operation on the unified session process.
      */
     stop(sessionId: string): Promise<void>;
     closeAll(): Promise<void>;
+    private closeOwned;
+    private releaseReservation;
+    private sessionStillExists;
     private bind;
     private assertKnownSession;
     private assertTransportIdentity;

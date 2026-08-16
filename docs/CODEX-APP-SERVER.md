@@ -140,13 +140,22 @@ Identity: `transport.sessionId` must already equal the registry `sessionId`.
 Mismatch is `session-mismatch`. The registry never rewrites
 `transport.sessionId`. Handshake is not started on a mismatch.
 
-Reservation: `attachAndInitialize` takes an exclusive per-session reservation
-before handshake (`attaching`). A second `attachAndInitialize` or sync
-`attach` for that session is `attach-in-progress` until the first settles.
-A bound record is `already-attached`. Failed handshake closes the reserved
-transport, drops the reservation, and leaves no record so a later attach
-may retry. `closeAll` during handshake: later success must **not** bind;
-that transport is closed and the registry stays empty/closed.
+Reservation: `attachAndInitialize` stores `sessionId → transport` in
+`attaching` before handshake. The registry owns that concrete transport.
+A second `attachAndInitialize` or sync `attach` for that session is
+`attach-in-progress` until the first settles. A bound record is
+`already-attached`. Failed handshake closes the reserved transport, drops
+the reservation (object identity), and leaves no record so a later attach
+may retry.
+
+`stop` closes a bound record **or** an in-flight handshake transport, awaits
+close, and the pending attach never binds afterward. `closeAll` marks the
+registry closed first, snapshots bound records and reservations, clears both,
+closes every owned transport (deduped by object identity), and awaits all
+closes before resolving. A handshake that later succeeds must **not** bind.
+
+If the session is removed from the session manager before bind, the reserved
+transport is closed and not bound. The session is not recreated.
 
 Stale close: `onClose` deletes the record only when
 `current.transport === transport` (object identity). A delayed close of OLD
@@ -164,7 +173,7 @@ Ownership:
 |---|---|
 | `attach` / `attachAndInitialize` | register (optional handshake) — no spawn |
 | unexpected child/parser failure | close, reject pending, drop registry entry |
-| `stop` | reject new work, close transport (does not stop an MS-1 dummy child) |
+| `stop` | close bound **or** in-flight handshake transport (does not stop an MS-1 dummy child) |
 | `will-quit` | `appServerHost.closeAll()` then MS-1 `shutdownAll` |
 | future production (PLANNED/BLOCKED) | STOPPED → STARTING → **one** child → init → RUNNING; unexpected exit → FAILED |
 

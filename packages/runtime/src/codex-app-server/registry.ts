@@ -30,15 +30,17 @@ export interface CodexSessionTransportRegistryOptions {
  * Ownership:
  * - Before the registry accepts a transport (mismatch, duplicate, in-progress):
  *   reject without closing or rewriting that transport.
- * - After reservation / bind: the registry owns registration lifecycle and
- *   closes the transport on handshake failure, stop, or closeAll.
+ * - After reservation / bind: the registry owns the concrete transport and
+ *   closes it on handshake failure, stop, closeAll, session-removed, or
+ *   closed-during-handshake.
  */
 export class CodexSessionTransportRegistry {
   private readonly sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
   private readonly initializeParams: unknown;
   private readonly initializeTimeoutMs?: number;
   private readonly records = new Map<string, SessionTransportRecord>();
-  private readonly attaching = new Set<string>();
+  /** In-flight attachAndInitialize: sessionId → the reserved transport. */
+  private readonly attaching = new Map<string, CodexAppServerTransport>();
   private closed = false;
 
   constructor(options: CodexSessionTransportRegistryOptions) {
@@ -76,7 +78,7 @@ export class CodexSessionTransportRegistry {
   /**
    * Attach then run initialize / initialized on that same transport.
    * Still does not spawn a child. Handshake runs only after identity checks
-   * and an exclusive reservation.
+   * and an exclusive reservation that owns this transport.
    */
   async attachAndInitialize(
     sessionId: string,
@@ -86,18 +88,31 @@ export class CodexSessionTransportRegistry {
     this.assertKnownSession(sessionId);
     this.assertTransportIdentity(sessionId, transport);
     this.assertNotOccupied(sessionId);
-    this.attaching.add(sessionId);
+    this.attaching.set(sessionId, transport);
     try {
       const handshake = await performInitializeHandshake(
         transport,
         this.initializeParams,
         this.initializeTimeoutMs,
       );
+      if (this.attaching.get(sessionId) !== transport) {
+        const error = new CodexAppServerError("closed", "session transport stopped", sessionId);
+        await transport.close(error);
+        throw error;
+      }
       if (this.closed) {
-        await transport.close(new CodexAppServerError("closed", "app-server registry closed", sessionId));
-        throw new CodexAppServerError("closed", "app-server registry closed", sessionId);
+        const error = new CodexAppServerError("closed", "app-server registry closed", sessionId);
+        await transport.close(error);
+        throw error;
+      }
+      if (!this.sessionStillExists(sessionId)) {
+        const error = new CodexAppServerError("invalid-id", `unknown session: ${sessionId}`, sessionId);
+        this.releaseReservation(sessionId, transport);
+        await transport.close(error);
+        throw error;
       }
       this.assertNotBound(sessionId);
+      this.releaseReservation(sessionId, transport);
       this.bind(sessionId, transport, true, handshake.params, handshake.result);
       return this.records.get(sessionId)!;
     } catch (error) {
@@ -108,30 +123,67 @@ export class CodexSessionTransportRegistry {
       }
       throw error;
     } finally {
-      this.attaching.delete(sessionId);
+      this.releaseReservation(sessionId, transport);
     }
   }
 
   /**
-   * Reject new work, close transport. Does not stop any MS-1 lifecycle child.
+   * Reject new work, close bound and/or in-flight handshake transport.
+   * Does not stop any MS-1 lifecycle child.
    * Future MS-2B: stop is one operation on the unified session process.
    */
   async stop(sessionId: string): Promise<void> {
+    const reserved = this.attaching.get(sessionId);
+    if (reserved) this.attaching.delete(sessionId);
     const record = this.records.get(sessionId);
-    if (!record) return;
-    this.records.delete(sessionId);
-    await record.transport.close(new CodexAppServerError("closed", "session transport stopped", sessionId));
+    if (record) this.records.delete(sessionId);
+    if (!reserved && !record) return;
+    const error = new CodexAppServerError("closed", "session transport stopped", sessionId);
+    await this.closeOwned([reserved, record?.transport], error);
   }
 
   async closeAll(): Promise<void> {
     this.closed = true;
-    const records = [...this.records.values()];
+    const bound = [...this.records.values()].map((record) => record.transport);
+    const reserved = [...this.attaching.values()];
     this.records.clear();
+    this.attaching.clear();
+    await this.closeOwned([...bound, ...reserved], new CodexAppServerError("closed", "app-server registry closed"));
+  }
+
+  private async closeOwned(
+    transports: Array<CodexAppServerTransport | undefined>,
+    error: CodexAppServerError,
+  ): Promise<void> {
+    const seen = new Set<CodexAppServerTransport>();
+    const unique: CodexAppServerTransport[] = [];
+    for (const transport of transports) {
+      if (!transport || seen.has(transport)) continue;
+      seen.add(transport);
+      unique.push(transport);
+    }
     await Promise.all(
-      records.map((record) =>
-        record.transport.close(new CodexAppServerError("closed", "app-server registry closed", record.sessionId)),
+      unique.map((transport) =>
+        transport.close(
+          error.sessionId ? error : new CodexAppServerError(error.kind, error.message, transport.sessionId),
+        ),
       ),
     );
+  }
+
+  private releaseReservation(sessionId: string, transport: CodexAppServerTransport): void {
+    if (this.attaching.get(sessionId) === transport) {
+      this.attaching.delete(sessionId);
+    }
+  }
+
+  private sessionStillExists(sessionId: string): boolean {
+    try {
+      this.sessionManager.getSessionStatus(sessionId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private bind(

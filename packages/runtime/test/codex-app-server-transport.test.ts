@@ -550,6 +550,26 @@ test("failed handshake releases reservation so a later attach can succeed", asyn
   }
 });
 
+function gatedInitialize(sessionId: string, gate: Promise<void>, timeoutMs = 500) {
+  return createFakeTransport(sessionId, {
+    timeoutMs,
+    onRequest: async (method) => {
+      if (method === "initialize") {
+        await gate;
+        return { result: { protocolVersion: "test" } };
+      }
+    },
+  });
+}
+
+function holdGate(): { gate: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { gate, release };
+}
+
 test("closeAll during handshake does not bind a later success", async () => {
   const root = tempRoot();
   try {
@@ -559,29 +579,22 @@ test("closeAll during handshake does not bind a later success", async () => {
       sessionManager: mgr,
       initializeTimeoutMs: 500,
     });
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const transport = createFakeTransport(a.id, {
-      timeoutMs: 500,
-      onRequest: async (method) => {
-        if (method === "initialize") {
-          await gate;
-          return { result: { protocolVersion: "test" } };
-        }
-      },
-    });
+    const { gate, release } = holdGate();
+    const transport = gatedInitialize(a.id, gate);
     const pending = registry.attachAndInitialize(a.id, transport);
     await new Promise((resolve) => setImmediate(resolve));
     await registry.closeAll();
-    release();
+    assert.equal(transport.isClosed, true);
     await assert.rejects(
       pending,
       (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
     );
     assert.equal(registry.get(a.id), undefined);
-    assert.equal(transport.isClosed, true);
+    assert.throws(
+      () => registry.attach(a.id, createFakeTransport(a.id)),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
+    );
+    release();
   } finally {
     await removeRoot(root);
   }
@@ -606,6 +619,193 @@ test("different sessions may initialize concurrently", async () => {
     assert.equal(rb.transport, tb);
     assert.equal(registry.get(a.id), ta);
     assert.equal(registry.get(b.id), tb);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("stop during handshake closes the reserved transport and never binds", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 800,
+    });
+    const { gate, release } = holdGate();
+    const transport = gatedInitialize(a.id, gate, 800);
+    const pending = registry.attachAndInitialize(a.id, transport);
+    await new Promise((resolve) => setImmediate(resolve));
+    await registry.stop(a.id);
+    assert.equal(transport.isClosed, true);
+    await assert.rejects(
+      pending,
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
+    );
+    assert.equal(registry.get(a.id), undefined);
+    release();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(registry.get(a.id), undefined);
+    const next = createFakeTransport(a.id, { timeoutMs: 200 });
+    const record = await registry.attachAndInitialize(a.id, next);
+    assert.equal(record.transport, next);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("closeAll during never-ending handshake closes the reserved transport immediately", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 5000,
+    });
+    const { gate, release } = holdGate();
+    const transport = gatedInitialize(a.id, gate, 5000);
+    const pending = registry.attachAndInitialize(a.id, transport);
+    await new Promise((resolve) => setImmediate(resolve));
+    const closed = registry.closeAll();
+    await closed;
+    assert.equal(transport.isClosed, true);
+    await assert.rejects(
+      pending,
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
+    );
+    assert.equal(registry.get(a.id), undefined);
+    assert.throws(
+      () => registry.attach(a.id, createFakeTransport(a.id)),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
+    );
+    release();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("closeAll closes a bound transport and two in-flight handshakes", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const c = mgr.createSession({ label: "C" });
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 800,
+    });
+    const bound = createFakeTransport(a.id, { timeoutMs: 200 });
+    registry.attach(a.id, bound);
+    const { gate: gateB, release: releaseB } = holdGate();
+    const { gate: gateC, release: releaseC } = holdGate();
+    const tb = gatedInitialize(b.id, gateB, 800);
+    const tc = gatedInitialize(c.id, gateC, 800);
+    const pendingB = registry.attachAndInitialize(b.id, tb);
+    const pendingC = registry.attachAndInitialize(c.id, tc);
+    await new Promise((resolve) => setImmediate(resolve));
+    await registry.closeAll();
+    assert.equal(bound.isClosed, true);
+    assert.equal(tb.isClosed, true);
+    assert.equal(tc.isClosed, true);
+    assert.equal(registry.get(a.id), undefined);
+    assert.equal(registry.get(b.id), undefined);
+    assert.equal(registry.get(c.id), undefined);
+    await assert.rejects(pendingB, (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed");
+    await assert.rejects(pendingC, (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed");
+    releaseB();
+    releaseC();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("session removed during handshake does not bind", async () => {
+  const root = tempRoot();
+  try {
+    const lifecycle = new LifecycleLauncher();
+    const mgr = new CodexSessionManager({ userRoot: root, launcher: lifecycle, stopTimeoutMs: 30, killTimeoutMs: 30 });
+    const a = mgr.createSession({ label: "gone" });
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 800,
+    });
+    const { gate, release } = holdGate();
+    const transport = gatedInitialize(a.id, gate, 800);
+    const pending = registry.attachAndInitialize(a.id, transport);
+    await new Promise((resolve) => setImmediate(resolve));
+    await mgr.removeSession(a.id);
+    release();
+    await assert.rejects(pending, (err: unknown) => {
+      return err instanceof CodexAppServerError && (err.kind === "invalid-id" || err.kind === "closed");
+    });
+    assert.equal(transport.isClosed, true);
+    assert.equal(registry.get(a.id), undefined);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("stop A does not affect in-flight attach of B", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 800,
+    });
+    const { gate: gateA, release: releaseA } = holdGate();
+    const { gate: gateB, release: releaseB } = holdGate();
+    const ta = gatedInitialize(a.id, gateA, 800);
+    const tb = gatedInitialize(b.id, gateB, 800);
+    const pendingA = registry.attachAndInitialize(a.id, ta);
+    const pendingB = registry.attachAndInitialize(b.id, tb);
+    await new Promise((resolve) => setImmediate(resolve));
+    await registry.stop(a.id);
+    assert.equal(ta.isClosed, true);
+    await assert.rejects(pendingA, (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed");
+    assert.equal(tb.isClosed, false);
+    releaseB();
+    const recordB = await pendingB;
+    assert.equal(recordB.transport, tb);
+    assert.equal(registry.get(b.id), tb);
+    assert.equal(registry.get(a.id), undefined);
+    releaseA();
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("stale reservation finally does not drop a newer attach", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 800,
+    });
+    const { gate: gateOld, release: releaseOld } = holdGate();
+    const oldTransport = gatedInitialize(a.id, gateOld, 800);
+    const pendingOld = registry.attachAndInitialize(a.id, oldTransport);
+    await new Promise((resolve) => setImmediate(resolve));
+    await registry.stop(a.id);
+    await assert.rejects(pendingOld, (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed");
+    const next = createFakeTransport(a.id, { timeoutMs: 200 });
+    const record = await registry.attachAndInitialize(a.id, next);
+    assert.equal(record.transport, next);
+    assert.equal(registry.get(a.id), next);
+    releaseOld();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(registry.get(a.id), next);
+    assert.equal(next.isClosed, false);
     await registry.closeAll();
   } finally {
     await removeRoot(root);
