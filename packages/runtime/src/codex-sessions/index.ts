@@ -23,6 +23,7 @@ export type {
 export {
   createNodeCodexProcessLauncher,
   resolveTrustedCodexExecutable,
+  trustedCodexSearchRoots,
   isolatedSessionEnv,
   ISOLATED_ENV_ALLOWLIST,
 } from "./launcher";

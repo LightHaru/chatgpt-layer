@@ -8,6 +8,7 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ### Added
 
+- MS-2B1 developer-only pass-through Desktop app-server spawn probe (`CODEXPP_APP_SERVER_PROBE=1`, default off). Official Codex upstream stdio argv (`app-server --listen stdio://` / `--stdio`) is recorded as proven; ChatGPT Desktop's bundled spawn remains unverified and live interception stays blocked. No ChildProcess wrapping, no stdio sniffing, default Desktop behavior unchanged.
 - MS-2A Layer-internal Codex app-server transport, request correlation, thread-owner store, and simple sticky-thread routing core. Production child invocation stays fail-closed until proven. No public mutation IPC, no Smart Routing, no Desktop interception.
 - MS-2A review: attach-only session transport (no second child), byte-safe NDJSON, single server-request handler, type-safe request ids.
 - MS-2A registry isolation: transport.sessionId must match before handshake, stale onClose is object-identity checked, exclusive attach reservation, closeAll during handshake does not bind.

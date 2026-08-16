@@ -1,6 +1,6 @@
 export { CodexAppServerError, isCodexAppServerError, isQuotaExhaustionKind } from "./errors";
 export type { CodexAppServerErrorKind } from "./errors";
-export { APP_SERVER_INVOCATION_STATUS, FRAMING_STATUS, PRODUCTION_CHILD_TRANSPORT_ENABLED, REFERENCE_APP_SERVER_ARGV, TRUSTED_EXECUTABLE_STATUS, appServerDiscoveryReport, } from "./discovery";
+export { APP_SERVER_INVOCATION_STATUS, UPSTREAM_APP_SERVER_PROTOCOL, UPSTREAM_APP_SERVER_STDIO_ARGV, UPSTREAM_APP_SERVER_STDIO_ARGV_FIXED, UPSTREAM_APP_SERVER_STDIO_SHORTHAND, DESKTOP_BUNDLED_APP_SERVER_SUPPORT, DESKTOP_SPAWN_SEAM, DESKTOP_LIVE_INTERCEPTION, FRAMING_STATUS, PRODUCTION_CHILD_TRANSPORT_ENABLED, REFERENCE_APP_SERVER_ARGV, TRUSTED_EXECUTABLE_STATUS, appServerDiscoveryReport, } from "./discovery";
 export type { AppServerDiscoveryReport } from "./discovery";
 export { classifyMessage, parseAppServerMessage, parseJsonLine, serializeAppServerMessage, requestIdKey, isJsonId, isRecord, } from "./protocol";
 export { NdjsonParser, encodeNdjson, assertOutboundMessage } from "./framing";

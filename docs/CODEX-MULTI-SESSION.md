@@ -284,7 +284,8 @@ code. Main authorizes when a tweak identity is present.
 ## 21. MS-2 follow-ups
 
 - Prove the real bundled Codex app-server argv/framing against ChatGPT Desktop.
-- MS-2B: observe or proxy Desktop's live app-server without replacing binaries.
+- MS-2B1: developer-only pass-through `child_process.spawn` observer (default off). Upstream stdio argv is proven; Desktop bundled spawn remains UNVERIFIED.
+- MS-2B2 (later, gated): intercept that one proven spawn only after the JS seam is observed. Do not replace binaries.
 - Optional UI to create/start/stop sessions.
 - Atomic Accounts copy into a session home (never log tokens).
 - Smart Routing and quota-aware failover — only after a proven transport exists.
