@@ -3,9 +3,11 @@
  * `TweakManifest.permissions` enforcement.
  *
  * Policy:
- *   1. permissions ABSENT: legacy — preserve existing API behavior
+ *   1. permissions ABSENT: legacy — preserve historical API behavior
  *   2. permissions PRESENT: enforce the declared list strictly
  *   3. permissions: [] is NOT legacy — explicitly no optional capabilities
+ *   4. EXPLICIT_ONLY_PERMISSIONS (`codex-sessions`) are never implied by an
+ *      omitted field. They require the name to appear in the array.
  *
  * Historical aliases (`codex.windows` → `codex-windows`, `codex.views` →
  * `codex-views`) are preserved and treated as equivalent.
@@ -19,7 +21,7 @@ export declare const TWEAK_PERMISSION_ALIASES: {
     readonly "codex.windows": "codex-windows";
     readonly "codex.views": "codex-views";
 };
-export type CanonicalTweakPermission = "ipc" | "filesystem" | "network" | "settings" | "codex-runtime" | "codex-windows" | "codex-views" | "codex-cdp" | "native-module" | "native-view" | "native-helper";
+export type CanonicalTweakPermission = "ipc" | "filesystem" | "network" | "settings" | "codex-runtime" | "codex-windows" | "codex-views" | "codex-cdp" | "codex-sessions" | "native-module" | "native-view" | "native-helper";
 /** Layer Settings / Store / self-update admin IPC. Not a third-party tweak. */
 export declare const LAYER_ADMIN_IPC_CHANNELS: readonly ["codexpp:install-store-tweak", "codexpp:install-github-tweak", "codexpp:prepare-tweak-store-submission", "codexpp:run-codexpp-update", "codexpp:set-auto-update", "codexpp:set-update-config"];
 /**
@@ -46,6 +48,8 @@ export declare const TWEAK_CAPABILITY_IPC_CHANNELS: {
     readonly "codexpp:codex-runtime-capabilities": "codex-runtime";
     readonly "codexpp:codex-cdp-status": "codex-cdp";
     readonly "codexpp:codex-cdp-targets": "codex-cdp";
+    readonly "codexpp:codex-sessions-list": "codex-sessions";
+    readonly "codexpp:codex-sessions-status": "codex-sessions";
 };
 export type TweakCapabilityIpcChannel = keyof typeof TWEAK_CAPABILITY_IPC_CHANNELS;
 export interface TweakIdentitySnapshot {
@@ -67,6 +71,7 @@ export interface TweakApiSurface {
     nativeModule: boolean;
     nativeView: boolean;
     nativeHelper: boolean;
+    codexSessions: boolean;
 }
 export type TweakApiSlot = "present" | "denied" | "omitted";
 export interface TweakApiPlan {
@@ -82,6 +87,7 @@ export interface TweakApiPlan {
     nativeModule: TweakApiSlot;
     nativeView: TweakApiSlot;
     nativeHelper: TweakApiSlot;
+    codexSessions: TweakApiSlot;
 }
 export interface TweakIpcBridge {
     on(channel: string, listener: (...args: unknown[]) => void): void;
@@ -92,6 +98,7 @@ export interface TweakIpcBridge {
 export declare function normalizePermission(permission: string): CanonicalTweakPermission;
 export declare function hasExplicitPermissions(manifest: Pick<TweakManifest, "permissions">): boolean;
 export declare function isLegacyPermissionManifest(manifest: Pick<TweakManifest, "permissions">): boolean;
+export declare const EXPLICIT_ONLY_PERMISSIONS: Set<CanonicalTweakPermission>;
 export declare function hasTweakPermission(manifest: Pick<TweakManifest, "permissions">, permission: TweakPermission | CanonicalTweakPermission): boolean;
 export declare function permissionDeniedMessage(tweakId: string, permission: TweakPermission | CanonicalTweakPermission): string;
 export declare function permissionDeniedError(tweakId: string, permission: TweakPermission | CanonicalTweakPermission): Error;

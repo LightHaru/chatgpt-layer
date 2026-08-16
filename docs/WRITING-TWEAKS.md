@@ -38,7 +38,7 @@ restrict or declare specific capabilities.
 
 | Manifest | Behavior |
 |---|---|
-| `permissions` omitted | Legacy: existing APIs keep working. The minimal tweak below is this case. |
+| `permissions` omitted | Legacy: historical capabilities keep working. New `codex-sessions` is **not** included; it is explicit opt-in. The minimal tweak below is this case. |
 | `"permissions": [ ... ]` | Strict: only listed capabilities are authorized. |
 | `"permissions": []` | Explicitly none: no optional APIs. This is not legacy. |
 
@@ -56,6 +56,7 @@ Declare only what the tweak uses. Do not copy a full permission list.
 | `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
 | `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
 | `native-helper` | `launchHelper` / helper calls | Enforced. |
+| `codex-sessions` | `api.codex.sessions.list` / `getStatus` | Enforced. Explicit opt-in even when `permissions` is omitted. Read-only. See [multi-session](./CODEX-MULTI-SESSION.md). |
 | `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
 
 Aliases (equivalent, both accepted):

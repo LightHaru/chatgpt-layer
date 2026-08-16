@@ -3,9 +3,11 @@
  * `TweakManifest.permissions` enforcement.
  *
  * Policy:
- *   1. permissions ABSENT: legacy — preserve existing API behavior
+ *   1. permissions ABSENT: legacy — preserve historical API behavior
  *   2. permissions PRESENT: enforce the declared list strictly
  *   3. permissions: [] is NOT legacy — explicitly no optional capabilities
+ *   4. EXPLICIT_ONLY_PERMISSIONS (`codex-sessions`) are never implied by an
+ *      omitted field. They require the name to appear in the array.
  *
  * Historical aliases (`codex.windows` → `codex-windows`, `codex.views` →
  * `codex-views`) are preserved and treated as equivalent.
@@ -35,6 +37,7 @@ export type CanonicalTweakPermission =
   | "codex-windows"
   | "codex-views"
   | "codex-cdp"
+  | "codex-sessions"
   | "native-module"
   | "native-view"
   | "native-helper";
@@ -73,6 +76,8 @@ export const TWEAK_CAPABILITY_IPC_CHANNELS = {
   "codexpp:codex-runtime-capabilities": "codex-runtime",
   "codexpp:codex-cdp-status": "codex-cdp",
   "codexpp:codex-cdp-targets": "codex-cdp",
+  "codexpp:codex-sessions-list": "codex-sessions",
+  "codexpp:codex-sessions-status": "codex-sessions",
 } as const;
 
 export type TweakCapabilityIpcChannel = keyof typeof TWEAK_CAPABILITY_IPC_CHANNELS;
@@ -97,6 +102,7 @@ export interface TweakApiSurface {
   nativeModule: boolean;
   nativeView: boolean;
   nativeHelper: boolean;
+  codexSessions: boolean;
 }
 
 export type TweakApiSlot = "present" | "denied" | "omitted";
@@ -114,6 +120,7 @@ export interface TweakApiPlan {
   nativeModule: TweakApiSlot;
   nativeView: TweakApiSlot;
   nativeHelper: TweakApiSlot;
+  codexSessions: TweakApiSlot;
 }
 
 export interface TweakIpcBridge {
@@ -142,12 +149,17 @@ export function isLegacyPermissionManifest(
   return manifest.permissions === undefined;
 }
 
+export const EXPLICIT_ONLY_PERMISSIONS = new Set<CanonicalTweakPermission>(["codex-sessions"]);
+
 export function hasTweakPermission(
   manifest: Pick<TweakManifest, "permissions">,
   permission: TweakPermission | CanonicalTweakPermission,
 ): boolean {
-  if (!hasExplicitPermissions(manifest)) return true;
   const wanted = normalizePermission(permission);
+  if (EXPLICIT_ONLY_PERMISSIONS.has(wanted)) {
+    return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
+  }
+  if (!hasExplicitPermissions(manifest)) return true;
   return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
 }
 
@@ -206,6 +218,7 @@ export function tweakApiSurface(
     nativeModule: hasTweakPermission(manifest, "native-module"),
     nativeView: hasTweakPermission(manifest, "native-view"),
     nativeHelper: hasTweakPermission(manifest, "native-helper"),
+    codexSessions: hasTweakPermission(manifest, "codex-sessions"),
   };
 }
 
@@ -217,7 +230,8 @@ export function hasAnyCodexApi(surface: TweakApiSurface): boolean {
     surface.codexCdp ||
     surface.nativeModule ||
     surface.nativeView ||
-    surface.nativeHelper
+    surface.nativeHelper ||
+    surface.codexSessions
   );
 }
 
@@ -241,6 +255,7 @@ export function planTweakApi(manifest: Pick<TweakManifest, "permissions">): Twea
     nativeModule: slot(surface.nativeModule, "denied"),
     nativeView: slot(surface.nativeView, "denied"),
     nativeHelper: slot(surface.nativeHelper, "denied"),
+    codexSessions: slot(surface.codexSessions, "denied"),
   };
 }
 

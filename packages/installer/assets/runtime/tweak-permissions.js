@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TWEAK_CAPABILITY_IPC_CHANNELS = exports.LAYER_ADMIN_IPC_CHANNELS = exports.TWEAK_PERMISSION_ALIASES = void 0;
+exports.EXPLICIT_ONLY_PERMISSIONS = exports.TWEAK_CAPABILITY_IPC_CHANNELS = exports.LAYER_ADMIN_IPC_CHANNELS = exports.TWEAK_PERMISSION_ALIASES = void 0;
 exports.normalizePermission = normalizePermission;
 exports.hasExplicitPermissions = hasExplicitPermissions;
 exports.isLegacyPermissionManifest = isLegacyPermissionManifest;
@@ -61,6 +61,8 @@ exports.TWEAK_CAPABILITY_IPC_CHANNELS = {
     "codexpp:codex-runtime-capabilities": "codex-runtime",
     "codexpp:codex-cdp-status": "codex-cdp",
     "codexpp:codex-cdp-targets": "codex-cdp",
+    "codexpp:codex-sessions-list": "codex-sessions",
+    "codexpp:codex-sessions-status": "codex-sessions",
 };
 const TWEAK_ID_RE = /^[a-zA-Z0-9._-]+$/;
 function normalizePermission(permission) {
@@ -73,10 +75,14 @@ function hasExplicitPermissions(manifest) {
 function isLegacyPermissionManifest(manifest) {
     return manifest.permissions === undefined;
 }
+exports.EXPLICIT_ONLY_PERMISSIONS = new Set(["codex-sessions"]);
 function hasTweakPermission(manifest, permission) {
+    const wanted = normalizePermission(permission);
+    if (exports.EXPLICIT_ONLY_PERMISSIONS.has(wanted)) {
+        return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
+    }
     if (!hasExplicitPermissions(manifest))
         return true;
-    const wanted = normalizePermission(permission);
     return (manifest.permissions ?? []).some((entry) => normalizePermission(entry) === wanted);
 }
 function permissionDeniedMessage(tweakId, permission) {
@@ -118,6 +124,7 @@ function tweakApiSurface(manifest) {
         nativeModule: hasTweakPermission(manifest, "native-module"),
         nativeView: hasTweakPermission(manifest, "native-view"),
         nativeHelper: hasTweakPermission(manifest, "native-helper"),
+        codexSessions: hasTweakPermission(manifest, "codex-sessions"),
     };
 }
 function hasAnyCodexApi(surface) {
@@ -127,7 +134,8 @@ function hasAnyCodexApi(surface) {
         surface.codexCdp ||
         surface.nativeModule ||
         surface.nativeView ||
-        surface.nativeHelper);
+        surface.nativeHelper ||
+        surface.codexSessions);
 }
 function slot(allowed, whenDenied) {
     return allowed ? "present" : whenDenied;
@@ -148,6 +156,7 @@ function planTweakApi(manifest) {
         nativeModule: slot(surface.nativeModule, "denied"),
         nativeView: slot(surface.nativeView, "denied"),
         nativeHelper: slot(surface.nativeHelper, "denied"),
+        codexSessions: slot(surface.codexSessions, "denied"),
     };
 }
 function scopedTweakIpcChannel(tweakId, channel) {

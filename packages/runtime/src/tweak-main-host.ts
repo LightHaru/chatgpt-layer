@@ -32,6 +32,7 @@ import type {
   TweakManifest,
   TweakPermission,
 } from "@codex-plusplus/sdk";
+import { requireCodexSessionManager } from "./codex-sessions";
 import {
   assertTweakHasPermission,
   assertValidTweakId,
@@ -549,6 +550,14 @@ export function makeCodexApi(tweak: DiscoveredTweak): CodexApi | undefined {
       ? guard("codex-views", createCodexBrowserView)
       : deny("codex-views"),
     createWindow: surface.codexWindows ? guard("codex-windows", createCodexWindow) : deny("codex-windows"),
+    sessions: {
+      list: surface.codexSessions
+        ? async () => requireCodexSessionManager().listSessions()
+        : deny("codex-sessions"),
+      getStatus: surface.codexSessions
+        ? async (id: string) => requireCodexSessionManager().getSessionStatus(id)
+        : deny("codex-sessions"),
+    },
   };
 }
 

@@ -276,6 +276,14 @@ function rendererCodexApi(tweakId, manifest) {
         createWindow: surface.codexWindows
             ? (options) => electron_1.ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options)
             : deny("codex-windows"),
+        sessions: {
+            list: surface.codexSessions
+                ? () => electron_1.ipcRenderer.invoke("codexpp:codex-sessions-list", tweakId)
+                : deny("codex-sessions"),
+            getStatus: surface.codexSessions
+                ? (id) => electron_1.ipcRenderer.invoke("codexpp:codex-sessions-status", tweakId, id)
+                : deny("codex-sessions"),
+        },
     };
 }
 function rendererCodexViewRef(tweakId, id, webContentsId, parentWindowId) {

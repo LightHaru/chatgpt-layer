@@ -30,6 +30,7 @@ test("validateTweakManifest accepts Owl bridge permissions", () => {
       "native-module",
       "native-view",
       "native-helper",
+      "codex-sessions",
     ],
   });
 
@@ -118,4 +119,16 @@ test("validateTweakManifest warns on non-semver versions", () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.warnings[0]?.path, "version");
+});
+
+test("validateTweakManifest accepts codex-sessions permission", () => {
+  const result = validateTweakManifest({
+    id: "com.example.sessions",
+    name: "Sessions",
+    version: "1.0.0",
+    githubRepo: "example/sessions",
+    permissions: ["codex-sessions"],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
 });
