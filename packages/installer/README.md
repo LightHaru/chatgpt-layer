@@ -6,15 +6,30 @@ Requires Node.js 20+.
 
 CLI aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
 
-Published package name: `chatgpt-layer`. After installing that package, run the `install` subcommand.
+## npm
 
-Installer CLI for ChatGPT Layer, a local tweak system for the ChatGPT desktop app.
+```sh
+npm install -g chatgpt-layer
+chatgpt-layer install
+```
+
+Package: [`chatgpt-layer`](https://www.npmjs.com/package/chatgpt-layer).
+
+## GitHub (alternative)
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/install.ps1 | iex
+```
+
+macOS / Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/LightHaru/chatgpt-layer/main/install.sh | bash
 ```
 
-The one-liner fetches `install.sh` from `main` (fail-closed lockfile); that script then pins downloaded source to tag `v1.1.4` unless `CODEX_PLUSPLUS_REF` is set.
+The one-liner fetches the installer script from `main` (fail-closed lockfile); that script then pins downloaded source to tag `v1.1.4` unless `CODEX_PLUSPLUS_REF` is set.
 
 See the repository README for architecture, tweak authoring, security policy, and release notes:
 

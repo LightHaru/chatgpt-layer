@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/LightHaru/chatgpt-layer/releases"><img alt="release" src="https://img.shields.io/github/v/release/LightHaru/chatgpt-layer?style=for-the-badge&color=4F8CFF"></a>
+  <a href="https://www.npmjs.com/package/chatgpt-layer"><img alt="npm" src="https://img.shields.io/npm/v/chatgpt-layer?style=for-the-badge&logo=npm&color=CB3837"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/LightHaru/chatgpt-layer?style=for-the-badge&color=111827"></a>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white">
@@ -20,6 +21,7 @@
   <a href="#english"><img alt="English" src="https://img.shields.io/badge/English-4F8CFF?style=for-the-badge"></a>
   <a href="#tiếng-việt"><img alt="Tiếng Việt" src="https://img.shields.io/badge/Tiếng%20Việt-111827?style=for-the-badge"></a>
   <a href="https://github.com/LightHaru/chatgpt-layer/releases"><img alt="Releases" src="https://img.shields.io/badge/Releases-3b82f6?style=for-the-badge"></a>
+  <a href="https://www.npmjs.com/package/chatgpt-layer"><img alt="npm" src="https://img.shields.io/badge/npm-chatgpt--layer-CB3837?style=for-the-badge&logo=npm&logoColor=white"></a>
   <a href="docs/ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/Architecture-111827?style=flat-square"></a>
   <a href="docs/TROUBLESHOOTING.md"><img alt="Troubleshooting" src="https://img.shields.io/badge/Troubleshooting-111827?style=flat-square"></a>
   <a href="docs/WRITING-TWEAKS.md"><img alt="Writing Tweaks" src="https://img.shields.io/badge/Writing%20Tweaks-111827?style=flat-square"></a>
@@ -49,9 +51,18 @@ Unofficial. Not affiliated with OpenAI.
 | <img alt="repair" src="https://img.shields.io/badge/repair-4F8CFF?style=flat-square"> | Microsoft Store / app updates usually strip the patch. Fully quit `ChatGPT.exe`, then `chatgpt-layer repair`. |
 | <img alt="security pin" src="https://img.shields.io/badge/security%20pin-111827?style=flat-square"> | Store **Update** / **Install** only installs the `approvedCommitSha` pinned in `store/index.json` (1.1.3). A newer GitHub Release can badge the Tweaks page; the button does not pull an unpinned latest tag. |
 
-## Install <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
+## Install <img alt="" src="https://img.shields.io/badge/npm-CB3837?style=flat-square&logo=npm">
 
-**CLI package:** `chatgpt-layer` on the public registry (Node.js 20+). After installing that package, run the `install` subcommand. Aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
+**npm** (recommended, Node.js 20+)
+
+```sh
+npm install -g chatgpt-layer
+chatgpt-layer install
+```
+
+Aliases: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`. Package: [chatgpt-layer](https://www.npmjs.com/package/chatgpt-layer).
+
+**GitHub one-liners** (alternative)
 
 The one-liners fetch the installer script from `main` (fail-closed lockfile). That script then pins the downloaded source to tag `v1.1.4` unless `CODEX_PLUSPLUS_REF` is set.
 
@@ -233,6 +244,7 @@ Optional community Discord (Bennett's server, not the product name): [discord.gg
   <a href="#english"><img alt="English" src="https://img.shields.io/badge/English-4F8CFF?style=flat-square"></a>
   <a href="#tiếng-việt"><img alt="Tiếng Việt" src="https://img.shields.io/badge/Tiếng%20Việt-111827?style=flat-square"></a>
   <a href="https://github.com/LightHaru/chatgpt-layer/releases"><img alt="Releases" src="https://img.shields.io/badge/Releases-3b82f6?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/chatgpt-layer"><img alt="npm" src="https://img.shields.io/badge/npm-chatgpt--layer-CB3837?style=for-the-badge&logo=npm&logoColor=white"></a>
   <a href="docs/ARCHITECTURE.md"><img alt="Architecture" src="https://img.shields.io/badge/Architecture-111827?style=flat-square"></a>
   <a href="docs/TROUBLESHOOTING.md"><img alt="Troubleshooting" src="https://img.shields.io/badge/Troubleshooting-111827?style=flat-square"></a>
   <a href="docs/WRITING-TWEAKS.md"><img alt="Writing Tweaks" src="https://img.shields.io/badge/Writing%20Tweaks-111827?style=flat-square"></a>
@@ -254,9 +266,18 @@ Không chính thức. Không liên kết với OpenAI.
 | <img alt="repair" src="https://img.shields.io/badge/repair-4F8CFF?style=flat-square"> | Update Store / app thường gỡ mất patch. Tắt hẳn `ChatGPT.exe`, rồi `chatgpt-layer repair`. |
 | <img alt="security pin" src="https://img.shields.io/badge/security%20pin-111827?style=flat-square"> | **Update** / **Install** trên Store chỉ cài `approvedCommitSha` đã ghim trong `store/index.json` (1.1.3). GitHub Release mới có thể hiện badge; nút không kéo tag latest chưa ghim. |
 
-## Cài đặt <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
+## Cài đặt <img alt="" src="https://img.shields.io/badge/npm-CB3837?style=flat-square&logo=npm">
 
-**Gói CLI:** `chatgpt-layer` trên registry công khai (Node.js 20+). Sau khi cài gói đó, chạy subcommand `install`. Alias: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`.
+**npm** (nên dùng, Node.js 20+)
+
+```sh
+npm install -g chatgpt-layer
+chatgpt-layer install
+```
+
+Alias: `chatgpt-layer`, `cgl`, `codexplusplus`, `codex-plusplus`. Gói: [chatgpt-layer](https://www.npmjs.com/package/chatgpt-layer).
+
+**One-liner GitHub** (cách khác)
 
 One-liner lấy script cài từ `main` (lockfile fail-closed). Script đó ghim source tải về tag `v1.1.4` trừ khi đặt `CODEX_PLUSPLUS_REF`.
 

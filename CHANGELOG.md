@@ -8,6 +8,7 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ### Changed
 
+- README install docs lead with `npm install -g chatgpt-layer`; GitHub one-liners are the alternative.
 - Cross-platform CI matrix: Ubuntu, macOS, and Windows x Node 20 and 22. POSIX rm of package dist dirs is replaced by an in-repo Node clean script. Test discovery no longer depends on shell glob expansion.
 - Installer CLI package is registry-ready as `chatgpt-layer` 1.1.4: public metadata, SDK bundled into the published package, no unpublished workspace runtime deps.
 
