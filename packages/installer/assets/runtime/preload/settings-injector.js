@@ -30,7 +30,7 @@ exports.registerPage = registerPage;
 exports.setListedTweaks = setListedTweaks;
 const electron_1 = require("electron");
 const tweak_store_1 = require("../tweak-store");
-const CODEX_PLUSPLUS_RELEASES_URL = "https://github.com/b-nnett/codex-plusplus/releases";
+const CODEX_PLUSPLUS_RELEASES_URL = "https://github.com/LightHaru/chatgpt-layer/releases";
 const state = {
     sections: new Map(),
     pages: new Map(),
@@ -55,6 +55,8 @@ const state = {
     tweakStorePromise: null,
     tweakStoreError: null,
 };
+/** Prevents renderTweaksPage from re-invoking a forced GitHub check in a loop. */
+let tweaksPageForceCheckStarted = false;
 function plog(msg, extra) {
     electron_1.ipcRenderer.send("codexpp:preload-log", "info", `[settings-injector] ${msg}${extra === undefined ? "" : " " + safeStringify(extra)}`);
 }
@@ -186,6 +188,7 @@ function registerPage(tweakId, manifest, page) {
 /** Called by the tweak host after fetching the tweak list from main. */
 function setListedTweaks(list) {
     state.listedTweaks = list;
+    refreshInstalledTweaksUpdateBadge();
     if (state.activePage?.kind === "tweaks")
         rerender();
 }
@@ -259,12 +262,13 @@ function tryInject() {
     group.className = "flex flex-col gap-px";
     const updateButton = sidebarUpdatePillButton();
     state.codexPlusPlusUpdateButton = updateButton;
-    group.appendChild(sidebarGroupHeader("Codex++", "pt-3", updateButton));
+    group.appendChild(sidebarGroupHeader("ChatGPT Layer", "pt-3", updateButton));
     refreshSidebarCodexPlusPlusUpdateButton();
     // ── Sidebar items ────────────────────────────────────────────────────
     const configBtn = makeSidebarItem("Config", configIconSvg());
     const tweaksBtn = makeSidebarItem("Tweaks", tweaksIconSvg());
     const storeBtn = makeSidebarItem("Tweak Store", storeIconSvg());
+    appendSidebarStoreUpdateBadge(tweaksBtn);
     appendSidebarStoreUpdateBadge(storeBtn);
     configBtn.addEventListener("click", (e) => {
         e.preventDefault();
@@ -604,7 +608,7 @@ function appendSidebarStoreUpdateBadge(btn) {
     const badge = document.createElement("span");
     badge.dataset.codexppStoreUpdateBadge = "true";
     badge.hidden = true;
-    badge.title = "Installed tweaks with approved updates";
+    badge.title = "Installed tweaks with updates";
     badge.className = "inline-flex shrink-0 items-center justify-center";
     Object.assign(badge.style, {
         position: "absolute",
@@ -699,6 +703,8 @@ function applyNavActive(btn, active) {
 }
 // ─────────────────────────────────────────────────────────── activation ──
 function activatePage(page) {
+    if (page.kind !== "tweaks")
+        tweaksPageForceCheckStarted = false;
     const content = findContentArea();
     if (!content) {
         plog("activate: content area not found");
@@ -749,6 +755,7 @@ function activatePage(page) {
     }
 }
 function restoreCodexView() {
+    tweaksPageForceCheckStarted = false;
     plog("restore codex view");
     const content = findContentArea();
     if (!content)
@@ -806,7 +813,7 @@ function rerender() {
         return;
     }
     const title = ap.kind === "tweaks" ? "Tweaks" :
-        ap.kind === "store" ? "Tweak Store" : "Codex++";
+        ap.kind === "store" ? "Tweak Store" : "ChatGPT Layer";
     const subtitle = ap.kind === "tweaks"
         ? "Manage your installed Codex++ tweaks."
         : ap.kind === "store"
@@ -881,10 +888,10 @@ function autoUpdateRow(config) {
     left.className = "flex min-w-0 flex-col gap-1";
     const title = document.createElement("div");
     title.className = "min-w-0 text-sm text-token-text-primary";
-    title.textContent = "Automatically refresh Codex++";
+    title.textContent = "Automatically refresh ChatGPT Layer";
     const desc = document.createElement("div");
     desc.className = "text-token-text-secondary min-w-0 text-sm";
-    desc.textContent = `Installed version v${config.version}. The watcher checks hourly and can refresh the Codex++ runtime automatically.`;
+    desc.textContent = `Installed version v${config.version}. Off by default. The watcher repairs the ChatGPT patch; Layer self-update only runs if you opt in.`;
     left.appendChild(title);
     left.appendChild(desc);
     row.appendChild(left);
@@ -919,16 +926,12 @@ function updateChannelRow(config) {
     action?.appendChild(select);
     if (config.updateChannel === "custom") {
         action?.appendChild(compactButton("Edit", () => {
-            const repo = window.prompt("GitHub repo", config.updateRepo || "b-nnett/codex-plusplus");
-            if (repo === null)
-                return;
-            const ref = window.prompt("Git ref", config.updateRef || "main");
+            const ref = window.prompt("Release tag or commit SHA", config.updateRef || "");
             if (ref === null)
                 return;
             void electron_1.ipcRenderer
                 .invoke("codexpp:set-update-config", {
                 updateChannel: "custom",
-                updateRepo: repo,
                 updateRef: ref,
             })
                 .then(() => refreshConfigCard(row))
@@ -1239,7 +1242,7 @@ function updateSummary(check) {
 }
 function updateChannelSummary(config) {
     if (config.updateChannel === "custom") {
-        return `${config.updateRepo || "b-nnett/codex-plusplus"} ${config.updateRef || "(no ref set)"}`;
+        return `${config.updateRepo || "LightHaru/chatgpt-layer"} ${config.updateRef || "(no ref set)"}`;
     }
     if (config.updateChannel === "prerelease") {
         return "Use the newest published GitHub release, including prereleases.";
@@ -1326,7 +1329,7 @@ function reportBugRow() {
             "## Logs",
             "Attach relevant lines from the Codex++ log directory.",
         ].join("\n"));
-        void electron_1.ipcRenderer.invoke("codexpp:open-external", `https://github.com/b-nnett/codex-plusplus/issues/new?title=${title}&body=${body}`);
+        void electron_1.ipcRenderer.invoke("codexpp:open-external", `https://github.com/LightHaru/chatgpt-layer/issues/new?title=${title}&body=${body}`);
     }));
     return row;
 }
@@ -1396,7 +1399,7 @@ function refreshTweakStoreGrid(grid, source, refreshBtn, force = false) {
         grid.dataset.codexppStore = "";
         grid.removeAttribute("aria-busy");
         source.textContent = "Live registry unavailable";
-        updateStoreUpdateBadge(null);
+        refreshInstalledTweaksUpdateBadge();
         grid.textContent = "";
         grid.appendChild(storeMessageCard("Could not load tweak store", String(e)));
     })
@@ -1408,8 +1411,8 @@ function refreshTweakStoreGrid(grid, source, refreshBtn, force = false) {
 function warmTweakStore() {
     if (state.tweakStore || state.tweakStorePromise)
         return;
-    void getTweakStore().then((store) => {
-        updateStoreUpdateBadge(outdatedInstalledStoreCount(store.entries));
+    void getTweakStore().then(() => {
+        refreshInstalledTweaksUpdateBadge();
     });
 }
 function getTweakStore(force = false) {
@@ -1444,7 +1447,7 @@ function renderTweakStoreGrid(grid, source) {
     const entries = store.entries;
     grid.removeAttribute("aria-busy");
     source.textContent = `Refreshed ${new Date(store.fetchedAt).toLocaleString()}`;
-    updateStoreUpdateBadge(outdatedInstalledStoreCount(entries));
+    refreshInstalledTweaksUpdateBadge();
     grid.textContent = "";
     if (store.entries.length === 0) {
         grid.appendChild(storeMessageCard("No tweaks yet", "Use Publish Tweak to submit the first one."));
@@ -1473,7 +1476,7 @@ function tweakStoreCard(entry) {
     title.className = "min-w-0 text-lg font-semibold leading-7 text-token-foreground";
     title.textContent = entry.manifest.name;
     titleRow.appendChild(title);
-    titleRow.appendChild(verifiedSafeBadge());
+    titleRow.appendChild(listedPinBadge(entry));
     stack.appendChild(titleRow);
     if (entry.manifest.description) {
         const desc = tweakStoreDescription();
@@ -1514,7 +1517,7 @@ function tweakStoreCard(entry) {
                 showStoreToast(`${entry.manifest.name} installed.`);
                 showStoreButtonInstalled(button);
                 versions.replaceChildren(tweakStoreVersionBadge(entry, entry.manifest.version));
-                updateStoreUpdateBadge(Math.max(0, currentStoreUpdateBadgeCount() - 1));
+                refreshInstalledTweaksUpdateBadge();
                 setTimeout(() => {
                     actions.replaceChildren(storeStatusPill("Installed"));
                     if (grid && source)
@@ -1761,18 +1764,37 @@ function setSidebarCodexPlusPlusUpdateButton(check) {
             ? `Open Codex++ ${check.latestVersion} update`
             : "Open Codex++ update";
 }
+function refreshInstalledTweaksUpdateBadge() {
+    updateStoreUpdateBadge(installedTweaksUpdateCount());
+}
+function installedTweaksUpdateCount() {
+    const ids = new Set();
+    for (const t of state.listedTweaks) {
+        if (t.update?.updateAvailable)
+            ids.add(t.manifest.id);
+    }
+    const entries = state.tweakStore?.entries;
+    if (entries) {
+        for (const entry of entries) {
+            if (entry.installed && entry.installed.version !== entry.manifest.version) {
+                ids.add(entry.id);
+            }
+        }
+    }
+    return ids.size;
+}
 function updateStoreUpdateBadge(count) {
-    const badge = document.querySelector("[data-codexpp-store-update-badge]");
-    if (!badge)
-        return;
-    badge.dataset.codexppStoreUpdateCount = count === null ? "" : String(count);
-    applyStoreUpdateBadgeStyle(badge, count);
-    badge.hidden = count === null || count <= 0;
-    badge.textContent = count && count > 0 ? String(count) : "";
-    badge.title =
-        count && count > 0
-            ? `${count} installed tweak${count === 1 ? "" : "s"} can be updated`
-            : "Installed tweaks are up to date";
+    const badges = Array.from(document.querySelectorAll("[data-codexpp-store-update-badge]"));
+    for (const badge of badges) {
+        badge.dataset.codexppStoreUpdateCount = count === null ? "" : String(count);
+        applyStoreUpdateBadgeStyle(badge, count);
+        badge.hidden = count === null || count <= 0;
+        badge.textContent = count && count > 0 ? String(count) : "";
+        badge.title =
+            count && count > 0
+                ? "Installed tweaks with updates"
+                : "Installed tweaks are up to date";
+    }
 }
 function applyStoreUpdateBadgeStyle(badge, count) {
     const hasUpdates = !!count && count > 0;
@@ -1836,17 +1858,23 @@ function refreshIconSvg() {
         `<path d="M15.6 10.65A5.65 5.65 0 0 1 6 14.7L4.25 13M4.25 16.25V13H7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>` +
         `</svg>`);
 }
-function verifiedSafeBadge() {
+function listedPinBadge(entry) {
     const badge = document.createElement("span");
     badge.className =
         "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-token-border/30 bg-transparent px-2 text-xs font-medium text-token-description-foreground";
+    const label = (0, tweak_store_1.listedPinLabel)(entry.approvedCommitSha);
+    badge.title = `Store-listed. Installs pinned commit ${entry.approvedCommitSha} only.`;
     badge.innerHTML =
         `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" class="text-blue-500" aria-hidden="true">` +
             `<path d="M7 1.75 11.25 3.4v3.2c0 2.6-1.65 4.25-4.25 5.4-2.6-1.15-4.25-2.8-4.25-5.4V3.4L7 1.75Z" stroke="currentColor" stroke-width="1.15" stroke-linejoin="round"/>` +
-            `<path d="M4.85 7.05 6.3 8.45l2.85-3.05" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>` +
             `</svg>` +
-            `<span>Verified as safe</span>`;
+            `<span>${label}</span>`;
     return badge;
+}
+function verifiedSafeBadge() {
+    return listedPinBadge({
+        approvedCommitSha: "0000000000000000000000000000000000000000",
+    });
 }
 function tweakStoreVersionBadge(entry, installedOverride) {
     const installed = installedOverride ?? entry.installed?.version ?? null;
@@ -1976,6 +2004,8 @@ function shortSha(value) {
     return value.slice(0, 7);
 }
 function renderTweaksPage(sectionsWrap) {
+    maybeForceRefreshTweakUpdates();
+    refreshInstalledTweaksUpdateBadge();
     const openBtn = openInPlaceButton("Open Tweaks Folder", () => {
         void electron_1.ipcRenderer.invoke("codexpp:reveal", tweaksPath());
     });
@@ -2032,12 +2062,117 @@ function renderTweaksPage(sectionsWrap) {
     const wrap = document.createElement("section");
     wrap.className = "flex flex-col gap-2";
     wrap.appendChild(sectionTitle("Installed Tweaks", trailing));
+    const availableUpdates = state.listedTweaks.filter((t) => t.update?.updateAvailable);
+    if (availableUpdates.length > 0) {
+        wrap.appendChild(tweakUpdatesBanner(availableUpdates));
+    }
     const card = roundedCard();
     for (const t of state.listedTweaks) {
         card.appendChild(tweakRow(t, sectionsByTweak.get(t.manifest.id) ?? [], pagesByTweak.get(t.manifest.id) ?? []));
     }
     wrap.appendChild(card);
     sectionsWrap.appendChild(wrap);
+}
+function maybeForceRefreshTweakUpdates() {
+    if (tweaksPageForceCheckStarted)
+        return;
+    tweaksPageForceCheckStarted = true;
+    void electron_1.ipcRenderer
+        .invoke("codexpp:list-tweaks", { force: true })
+        .then((list) => {
+        const next = list;
+        const prevKey = listedTweaksUpdateKey(state.listedTweaks);
+        const nextKey = listedTweaksUpdateKey(next);
+        state.listedTweaks = next;
+        refreshInstalledTweaksUpdateBadge();
+        if (prevKey !== nextKey && state.activePage?.kind === "tweaks")
+            rerender();
+    })
+        .catch((e) => {
+        plog("tweak GitHub update check failed", String(e));
+        tweaksPageForceCheckStarted = false;
+    });
+}
+function listedTweaksUpdateKey(list) {
+    return list
+        .map((t) => `${t.manifest.id}:${t.manifest.version}:${t.update?.updateAvailable ? t.update.latestVersion ?? "1" : "0"}`)
+        .join("|");
+}
+function tweakUpdatesBanner(updates) {
+    const card = roundedCard();
+    const row = document.createElement("div");
+    row.className = "flex items-center justify-between gap-4 p-3";
+    const msg = document.createElement("div");
+    msg.className = "min-w-0 text-sm text-token-text-primary";
+    if (updates.length === 1) {
+        const t = updates[0];
+        const version = t.update?.latestVersion ? ` ${t.update.latestVersion}` : "";
+        msg.textContent = `${t.manifest.name}${version} is available`;
+    }
+    else {
+        msg.textContent = `${updates.length} tweak updates available`;
+    }
+    row.appendChild(msg);
+    const errorEl = document.createElement("div");
+    errorEl.className = "text-token-charts-red px-3 pb-3 text-sm";
+    errorEl.hidden = true;
+    if (updates.length === 1) {
+        const t = updates[0];
+        const updateBtn = compactButton("Update", () => {
+            startGithubTweakInstall(t, updateBtn, errorEl);
+        });
+        row.appendChild(updateBtn);
+    }
+    card.appendChild(row);
+    card.appendChild(errorEl);
+    return card;
+}
+function startGithubTweakInstall(t, button, errorHost) {
+    button.disabled = true;
+    button.textContent = "Updating…";
+    if (errorHost) {
+        errorHost.hidden = true;
+        errorHost.textContent = "";
+    }
+    void electron_1.ipcRenderer
+        .invoke("codexpp:install-github-tweak", t.manifest.id)
+        .then(() => electron_1.ipcRenderer.invoke("codexpp:reload-tweaks").catch((err) => {
+        plog("force reload (main) failed", String(err));
+    }))
+        .then(() => {
+        location.reload();
+    })
+        .catch((e) => {
+        button.disabled = false;
+        button.textContent = "Update";
+        const message = String(e?.message ?? e);
+        if (errorHost) {
+            errorHost.hidden = false;
+            errorHost.textContent = message;
+            if (t.update?.releaseUrl && !errorHost.querySelector("[data-codexpp-release-notes]")) {
+                errorHost.appendChild(document.createTextNode(" "));
+                const notes = releaseNotesButton(t.update.releaseUrl);
+                notes.dataset.codexppReleaseNotes = "true";
+                errorHost.appendChild(notes);
+            }
+        }
+        else {
+            plog("github tweak install failed", message);
+        }
+    });
+}
+function releaseNotesButton(releaseUrl) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className =
+        "user-select-none no-drag cursor-interaction inline-flex h-8 items-center whitespace-nowrap px-1 text-xs text-token-text-secondary hover:underline disabled:cursor-not-allowed disabled:opacity-40";
+    btn.textContent = "Release notes";
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void electron_1.ipcRenderer.invoke("codexpp:open-external", releaseUrl);
+    });
+    return btn;
 }
 function tweakRow(t, sections, pages) {
     const m = t.manifest;
@@ -2048,6 +2183,9 @@ function tweakRow(t, sections, pages) {
     cell.className = "flex flex-col";
     if (!t.enabled)
         cell.style.opacity = "0.7";
+    const errorEl = document.createElement("div");
+    errorEl.className = "text-token-charts-red px-3 pb-3 text-sm";
+    errorEl.hidden = true;
     const header = document.createElement("div");
     header.className = "flex items-start justify-between gap-4 p-3";
     const left = document.createElement("div");
@@ -2182,10 +2320,14 @@ function tweakRow(t, sections, pages) {
             : `Open ${pages.map((p) => p.page.title).join(", ")}`;
         right.appendChild(configureBtn);
     }
-    if (t.update?.updateAvailable && t.update.releaseUrl) {
-        right.appendChild(compactButton("Review Release", () => {
-            void electron_1.ipcRenderer.invoke("codexpp:open-external", t.update.releaseUrl);
-        }));
+    if (t.update?.updateAvailable) {
+        const updateBtn = compactButton("Update", () => {
+            startGithubTweakInstall(t, updateBtn, errorEl);
+        });
+        right.appendChild(updateBtn);
+        if (t.update.releaseUrl) {
+            right.appendChild(releaseNotesButton(t.update.releaseUrl));
+        }
     }
     right.appendChild(switchControl(t.enabled, async (next) => {
         await electron_1.ipcRenderer.invoke("codexpp:set-tweak-enabled", m.id, next);
@@ -2194,6 +2336,7 @@ function tweakRow(t, sections, pages) {
     }));
     header.appendChild(right);
     cell.appendChild(header);
+    cell.appendChild(errorEl);
     // If the tweak is enabled and registered settings sections, render those
     // bodies as nested rows beneath the header inside the same cell.
     if (t.enabled && sections.length > 0) {

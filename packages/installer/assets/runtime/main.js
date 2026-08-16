@@ -22,18 +22,18 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// cgl-p3/packages/runtime/src/main.ts
+// src/main.ts
 var import_electron6 = require("electron");
 var import_node_fs17 = require("node:fs");
 var import_node_path14 = require("node:path");
 
-// cgl-p3/node_modules/chokidar/esm/index.js
+// ../../node_modules/chokidar/esm/index.js
 var import_fs2 = require("fs");
 var import_promises3 = require("fs/promises");
 var import_events = require("events");
 var sysPath2 = __toESM(require("path"), 1);
 
-// cgl-p3/node_modules/readdirp/esm/index.js
+// ../../node_modules/readdirp/esm/index.js
 var import_promises = require("node:fs/promises");
 var import_node_stream = require("node:stream");
 var import_node_path = require("node:path");
@@ -252,7 +252,7 @@ function readdirp(root, options = {}) {
   return new ReaddirpStream(options);
 }
 
-// cgl-p3/node_modules/chokidar/esm/handler.js
+// ../../node_modules/chokidar/esm/handler.js
 var import_fs = require("fs");
 var import_promises2 = require("fs/promises");
 var sysPath = __toESM(require("path"), 1);
@@ -1008,7 +1008,7 @@ var NodeFsHandler = class {
   }
 };
 
-// cgl-p3/node_modules/chokidar/esm/index.js
+// ../../node_modules/chokidar/esm/index.js
 var SLASH = "/";
 var SLASH_SLASH = "//";
 var ONE_DOT = ".";
@@ -1718,7 +1718,7 @@ function watch(paths, options = {}) {
 }
 var esm_default = { watch, FSWatcher };
 
-// cgl-p3/packages/runtime/src/logging.ts
+// src/logging.ts
 var import_node_fs = require("node:fs");
 var MAX_LOG_BYTES = 10 * 1024 * 1024;
 function appendCappedLog(path, line, maxBytes = MAX_LOG_BYTES) {
@@ -1741,7 +1741,7 @@ function appendCappedLog(path, line, maxBytes = MAX_LOG_BYTES) {
   (0, import_node_fs.appendFileSync)(path, incoming);
 }
 
-// cgl-p3/packages/runtime/src/codex-runtime-probe.ts
+// src/codex-runtime-probe.ts
 var import_node_fs2 = require("node:fs");
 var import_node_path2 = require("node:path");
 function probeRuntimeCompatibility(opts) {
@@ -2130,13 +2130,13 @@ function asRecord(value) {
   return value && typeof value === "object" ? value : null;
 }
 
-// cgl-p3/packages/runtime/src/watcher-health.ts
+// src/watcher-health.ts
 var import_node_child_process = require("node:child_process");
 var import_node_fs3 = require("node:fs");
 var import_node_os = require("node:os");
 var import_node_path3 = require("node:path");
 
-// cgl-p3/packages/runtime/src/ipc-guard.ts
+// src/ipc-guard.ts
 function classifyIpcSender(sender, untrustedIds = /* @__PURE__ */ new Set()) {
   if (sender.isDestroyed?.()) return "guest";
   if (untrustedIds.has(sender.id)) return "guest";
@@ -2161,7 +2161,7 @@ function stripRendererUpdateRepo(config) {
   return rest;
 }
 
-// cgl-p3/packages/runtime/src/watcher-health.ts
+// src/watcher-health.ts
 var LAUNCHD_LABEL = "com.codexplusplus.watcher";
 var WATCHER_LOG = (0, import_node_path3.join)((0, import_node_os.homedir)(), "Library", "Logs", "codex-plusplus-watcher.log");
 function getWatcherHealth(userRoot2) {
@@ -2393,7 +2393,7 @@ function unescapeXml(value) {
   return value.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
 
-// cgl-p3/packages/runtime/src/tweak-lifecycle.ts
+// src/tweak-lifecycle.ts
 function isMainProcessTweakScope(scope) {
   return scope !== "renderer";
 }
@@ -2412,7 +2412,7 @@ function setTweakEnabledAndReload(id, enabled, deps) {
   return true;
 }
 
-// cgl-p3/packages/runtime/src/browser-ui.ts
+// src/browser-ui.ts
 var import_electron = require("electron");
 var import_node_crypto = require("node:crypto");
 var import_node_fs4 = require("node:fs");
@@ -3528,7 +3528,7 @@ function delay(ms) {
   return new Promise((resolve9) => setTimeout(resolve9, ms));
 }
 
-// cgl-p3/packages/runtime/src/native-paths.ts
+// src/native-paths.ts
 var import_node_fs5 = require("node:fs");
 var import_node_path5 = require("node:path");
 function resolveNativeTweakPath(tweakDir, path) {
@@ -3551,12 +3551,12 @@ function isPathInside(parent, target) {
   return rel === "" || !!rel && !rel.startsWith("..") && !(0, import_node_path5.isAbsolute)(rel);
 }
 
-// cgl-p3/packages/runtime/src/runtime-paths.ts
+// src/runtime-paths.ts
 var import_node_fs6 = require("node:fs");
 var import_node_os2 = require("node:os");
 var import_node_path6 = require("node:path");
 
-// cgl-p3/packages/runtime/src/tweak-store.ts
+// src/tweak-store.ts
 var PINNED_TWEAK_STORE_INDEX_COMMIT = "7a0e95b161de5480261f17bbf84004d9be90dc6e";
 var PINNED_TWEAK_STORE_INDEX_SHA256 = "378e88cc366ef6d50816a27838af146c34fef122c6bfee3ba03c9549b862d063";
 var DEFAULT_TWEAK_STORE_INDEX_URL = `https://raw.githubusercontent.com/LightHaru/chatgpt-layer/${PINNED_TWEAK_STORE_INDEX_COMMIT}/store/index.json`;
@@ -3671,7 +3671,7 @@ function resolveTweakStoreIndexUrl(env = process.env) {
   return DEFAULT_TWEAK_STORE_INDEX_URL;
 }
 
-// cgl-p3/packages/runtime/src/runtime-paths.ts
+// src/runtime-paths.ts
 var userRootEnv = process.env.CODEX_PLUSPLUS_USER_ROOT;
 var runtimeDirEnv = process.env.CODEX_PLUSPLUS_RUNTIME;
 if (!userRootEnv || !runtimeDirEnv) {
@@ -3708,7 +3708,7 @@ function log(level, ...args) {
   if (level === "error") console.error("[codex-plusplus]", ...args);
 }
 
-// cgl-p3/packages/runtime/src/config-state.ts
+// src/config-state.ts
 var import_node_fs7 = require("node:fs");
 function readState() {
   try {
@@ -3782,14 +3782,14 @@ function cleanOptionalString(value) {
   return trimmed ? trimmed : void 0;
 }
 
-// cgl-p3/packages/runtime/src/store-install.ts
+// src/store-install.ts
 var import_node_fs8 = require("node:fs");
 var import_node_child_process2 = require("node:child_process");
 var import_node_crypto3 = require("node:crypto");
 var import_node_path7 = require("node:path");
 var import_node_os3 = require("node:os");
 
-// cgl-p3/packages/runtime/src/tweak-store-integrity.ts
+// src/tweak-store-integrity.ts
 var import_node_crypto2 = require("node:crypto");
 function hashStoreIndex(body) {
   return (0, import_node_crypto2.createHash)("sha256").update(body).digest("hex");
@@ -3801,7 +3801,7 @@ function assertStoreIndexMatchesPin(body, expectedSha256 = PINNED_TWEAK_STORE_IN
   }
 }
 
-// cgl-p3/packages/runtime/src/store-install.ts
+// src/store-install.ts
 var VERSION_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/;
 var StoreTweakModifiedError = class extends Error {
   constructor(tweakName) {
@@ -4137,10 +4137,10 @@ function compareVersions(a, b) {
   return 0;
 }
 
-// cgl-p3/packages/runtime/src/main.ts
+// src/main.ts
 var import_node_crypto6 = require("node:crypto");
 
-// cgl-p3/packages/runtime/src/self-update.ts
+// src/self-update.ts
 var import_node_fs9 = require("node:fs");
 var import_node_child_process3 = require("node:child_process");
 var import_node_path8 = require("node:path");
@@ -4402,12 +4402,12 @@ function markSelfUpdateStarted(sourceRoot) {
   return state;
 }
 
-// cgl-p3/packages/runtime/src/owl-views.ts
+// src/owl-views.ts
 var import_electron3 = require("electron");
 var import_node_fs10 = require("node:fs");
 var import_node_crypto4 = require("node:crypto");
 
-// cgl-p3/packages/runtime/src/codex-windows.ts
+// src/codex-windows.ts
 var import_electron2 = require("electron");
 function getPrimaryCodexWindow() {
   const services = getCodexWindowServices();
@@ -4619,7 +4619,7 @@ function windowIdFor(win) {
   return typeof id === "number" ? id : null;
 }
 
-// cgl-p3/packages/runtime/src/owl-views.ts
+// src/owl-views.ts
 var untrustedWebContentsIds = /* @__PURE__ */ new Set();
 var owlViews = /* @__PURE__ */ new Map();
 function markUntrustedWebContents(wc) {
@@ -4889,12 +4889,12 @@ function assertBounds(bounds) {
   }
 }
 
-// cgl-p3/packages/runtime/src/tweak-main-host.ts
+// src/tweak-main-host.ts
 var import_electron5 = require("electron");
 var import_node_fs16 = require("node:fs");
 var import_node_path13 = require("node:path");
 
-// cgl-p3/packages/runtime/src/tweak-discovery.ts
+// src/tweak-discovery.ts
 var import_node_fs11 = require("node:fs");
 var import_node_path9 = require("node:path");
 var ENTRY_CANDIDATES = ["index.js", "index.cjs", "index.mjs"];
@@ -4937,7 +4937,7 @@ function resolveEntry(dir, m) {
   return null;
 }
 
-// cgl-p3/packages/runtime/src/storage.ts
+// src/storage.ts
 var import_node_fs12 = require("node:fs");
 var import_node_path10 = require("node:path");
 var FLUSH_DELAY_MS = 50;
@@ -4998,7 +4998,7 @@ function sanitize(id) {
   return id.replace(/[^a-zA-Z0-9._@-]/g, "_");
 }
 
-// cgl-p3/packages/runtime/src/mcp-sync.ts
+// src/mcp-sync.ts
 var import_node_fs13 = require("node:fs");
 var import_node_path11 = require("node:path");
 var MCP_MANAGED_START = "# BEGIN CODEX++ MANAGED MCP SERVERS";
@@ -5147,7 +5147,7 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// cgl-p3/packages/runtime/src/native-bridge.ts
+// src/native-bridge.ts
 var import_electron4 = require("electron");
 var import_node_child_process4 = require("node:child_process");
 var import_node_crypto5 = require("node:crypto");
@@ -5703,7 +5703,7 @@ function callWindowMethod(parentWindow, method) {
   }
 }
 
-// cgl-p3/packages/runtime/src/tweak-permissions.ts
+// src/tweak-permissions.ts
 var TWEAK_PERMISSION_ALIASES = {
   "codex.windows": "codex-windows",
   "codex.views": "codex-views"
@@ -5808,7 +5808,7 @@ function createDeniedTweakIpc(tweakId) {
   };
 }
 
-// cgl-p3/packages/runtime/src/tweak-fs-sandbox.ts
+// src/tweak-fs-sandbox.ts
 var import_node_fs15 = require("node:fs");
 var import_node_path12 = require("node:path");
 function tweakDataDir(userRoot2, tweakId) {
@@ -5827,7 +5827,7 @@ function resolveTweakDataPath(userRoot2, tweakId, relPath) {
   return { dir, full };
 }
 
-// cgl-p3/packages/runtime/src/tweak-main-host.ts
+// src/tweak-main-host.ts
 var UPDATE_CHECK_INTERVAL_MS2 = 24 * 60 * 60 * 1e3;
 var tweakState = {
   discovered: [],
@@ -6212,7 +6212,7 @@ var tweakLifecycleDeps = {
   broadcastReload
 };
 
-// cgl-p3/packages/runtime/src/main.ts
+// src/main.ts
 if (process.env.CODEXPP_REMOTE_DEBUG === "1") {
   const port = process.env.CODEXPP_REMOTE_DEBUG_PORT ?? "9222";
   import_electron6.app.commandLine.appendSwitch("remote-debugging-port", port);
