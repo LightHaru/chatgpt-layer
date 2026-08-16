@@ -15,3 +15,6 @@ coverage
 # installer artifacts (local testing)
 /tmp-extract
 /tmp-codex
+
+# packed CLI tarballs
+*.tgz

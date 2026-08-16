@@ -17,5 +17,6 @@
     "esbuild": "^0.28.0",
     "typescript": "^5.6.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "private": true
 }
