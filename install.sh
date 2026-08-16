@@ -77,17 +77,11 @@ mv "$EXTRACT" "$NEXT"
 echo "Installing dependencies..."
 (
   cd "$NEXT"
-  if [ -f package-lock.json ]; then
-    if ! npm ci --workspaces --include-workspace-root --ignore-scripts; then
-      echo "npm ci failed; regenerating the downloaded lockfile and installing workspace dependencies." >&2
-      rm -f package-lock.json
-      npm install --workspaces --include-workspace-root --ignore-scripts ||
-        fail "npm install failed while installing codex-plusplus dependencies."
-    fi
-  else
-    npm install --workspaces --include-workspace-root --ignore-scripts ||
-      fail "npm install failed while installing codex-plusplus dependencies."
+  if [ ! -f package-lock.json ]; then
+    fail "package-lock.json is required; the lockfile was not modified."
   fi
+  npm ci --workspaces --include-workspace-root --ignore-scripts ||
+    fail "npm ci failed while installing codex-plusplus dependencies; the lockfile was not modified."
 )
 
 echo "Building codex-plusplus..."

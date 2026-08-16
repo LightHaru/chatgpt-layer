@@ -56,21 +56,12 @@ try {
   Write-Host "Installing dependencies..."
   Push-Location $Next
   try {
-    if (Test-Path "package-lock.json") {
-      & npm.cmd ci --workspaces --include-workspace-root --ignore-scripts
-      if ($LASTEXITCODE -ne 0) {
-        [Console]::Error.WriteLine("npm ci failed; regenerating the downloaded lockfile and installing workspace dependencies.")
-        Remove-Item -Force "package-lock.json"
-        & npm.cmd install --workspaces --include-workspace-root --ignore-scripts
-        if ($LASTEXITCODE -ne 0) {
-          Fail "npm install failed while installing codex-plusplus dependencies."
-        }
-      }
-    } else {
-      & npm.cmd install --workspaces --include-workspace-root --ignore-scripts
-      if ($LASTEXITCODE -ne 0) {
-        Fail "npm install failed while installing codex-plusplus dependencies."
-      }
+    if (-not (Test-Path "package-lock.json")) {
+      Fail "package-lock.json is required; the lockfile was not modified."
+    }
+    & npm.cmd ci --workspaces --include-workspace-root --ignore-scripts
+    if ($LASTEXITCODE -ne 0) {
+      Fail "npm ci failed while installing codex-plusplus dependencies; the lockfile was not modified."
     }
   } finally {
     Pop-Location
@@ -101,9 +92,12 @@ try {
   Write-Host "Finalizing workspace links..."
   Push-Location $InstallDir
   try {
-    & npm.cmd install --workspaces --include-workspace-root --ignore-scripts
+    if (-not (Test-Path "package-lock.json")) {
+      Fail "package-lock.json is required; the lockfile was not modified."
+    }
+    & npm.cmd ci --workspaces --include-workspace-root --ignore-scripts
     if ($LASTEXITCODE -ne 0) {
-      Fail "npm install failed while finalizing codex-plusplus workspace links."
+      Fail "npm ci failed while finalizing codex-plusplus workspace links; the lockfile was not modified."
     }
   } finally {
     Pop-Location
