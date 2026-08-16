@@ -1,7 +1,7 @@
 {
   "name": "codex-plusplus",
   "private": true,
-  "version": "1.1.4",
+  "version": "1.1.5",
   "license": "MIT",
   "description": "ChatGPT Layer \u2014 local tweaks for the ChatGPT desktop app. Based on Codex++.",
   "type": "module",

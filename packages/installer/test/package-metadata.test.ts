@@ -14,7 +14,7 @@ function readJson(path: string): Record<string, unknown> {
 test("installer package metadata is registry-ready", () => {
   const pkg = readJson(join(installerDir, "package.json"));
   assert.equal(pkg.name, "chatgpt-layer");
-  assert.equal(pkg.version, "1.1.4");
+  assert.equal(pkg.version, "1.1.5");
   assert.equal(pkg.private, undefined);
   assert.equal((pkg.engines as { node?: string }).node, ">=20");
   assert.equal((pkg.publishConfig as { access?: string }).access, "public");

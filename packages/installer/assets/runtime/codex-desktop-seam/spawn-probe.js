@@ -28,7 +28,7 @@ class CodexDesktopSpawnProbe {
         this.log = options.log;
         this.onInstallError = options.onInstallError;
         this.platform = options.platform ?? process.platform;
-        this.version = options.version ?? "1.1.4";
+        this.version = options.version ?? "1.1.5";
         this.now = options.now ?? (() => new Date().toISOString());
         this.io = options.io ?? { realpathSync: node_fs_1.realpathSync };
         this.status.enabled = (0, candidate_1.isAppServerProbeEnabled)(this.env);

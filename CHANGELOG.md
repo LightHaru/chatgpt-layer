@@ -6,26 +6,29 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ## Unreleased
 
-### Added
+## 1.1.5
 
-- MS-2B1 developer-only pass-through Desktop app-server spawn probe (`CODEXPP_APP_SERVER_PROBE=1`, default off). Official Codex upstream stdio argv (`app-server --listen stdio://` / `--stdio`) is recorded as proven; ChatGPT Desktop's bundled spawn remains unverified and live interception stays blocked. No ChildProcess wrapping, no stdio sniffing, default Desktop behavior unchanged.
-- MS-2B1 production probe patches the shared CommonJS `child_process` export via `createRequire`, not an esbuild ESM namespace wrapper. Hook install failure fail-closes (`spawn-hook-unavailable`) and cannot abort Layer boot.
-- MS-2A Layer-internal Codex app-server transport, request correlation, thread-owner store, and simple sticky-thread routing core. Production child invocation stays fail-closed until proven. No public mutation IPC, no Smart Routing, no Desktop interception.
-- MS-2A review: attach-only session transport (no second child), byte-safe NDJSON, single server-request handler, type-safe request ids.
-- MS-2A registry isolation: transport.sessionId must match before handshake, stale onClose is object-identity checked, exclusive attach reservation, closeAll during handshake does not bind.
-- MS-2A registry owns in-flight attach transports: `attaching` is a sessionId→transport map; `stop`/`closeAll` close reserved handshake transports and await them; a deleted session does not bind after initialize.
-- Wait for `@electron/asar` createPackage output to settle on disk before package.json readability checks (pack-stream race on macOS/Windows).
+Release notes: [docs/releases/1.1.5.md](docs/releases/1.1.5.md)
 
-### Changed
+Release candidate: session isolation, internal app-server transport, and a developer-only Desktop spawn-seam probe. Not multi-account ready.
 
-- README install docs lead with `npm install -g chatgpt-layer`; GitHub one-liners are the alternative.
-- Cross-platform CI matrix: Ubuntu, macOS, and Windows x Node 20 and 22. POSIX rm of package dist dirs is replaced by an in-repo Node clean script. Test discovery no longer depends on shell glob expansion.
-- Installer CLI package is registry-ready as `chatgpt-layer` 1.1.4: public metadata, SDK bundled into the published package, no unpublished workspace runtime deps.
-- Trusted Publishing via GitHub Actions OIDC for future `chatgpt-layer` releases (no token in CI).
+- MS-1 multi-session / session isolation foundation
+- explicit-only `codex-sessions` permission
+- MS-2A Layer-internal app-server transport, thread ownership, and sticky routing core
+- byte-safe JSONL / request correlation; session registry isolation and lifecycle hardening
+- MS-2B1 developer-only Desktop spawn-seam probe (`CODEXPP_APP_SERVER_PROBE=1`, default off)
+- shared CommonJS `child_process` hook via `createRequire`
+- Windows ASAR replacement hardening (PR #12)
+- ASAR pack-settle reliability fix (PR #15)
+- installer / test / CI hardening; CLI registry-ready as `chatgpt-layer`
 
-### Security
+Not in this release: Desktop live routing, multi-account Desktop mux, Smart Routing, quota failover, Accounts v3, production app-server transport.
 
-- Enforce `TweakManifest.permissions` end-to-end as capability authorization (least privilege), not a process sandbox. Absent permissions stay legacy; a present list is strict; `[]` grants no optional capabilities. Historical `codex.windows` / `codex.views` aliases are preserved.
+`DESKTOP_SPAWN_SEAM` stays `UNVERIFIED`. `DESKTOP_BUNDLED_APP_SERVER_SUPPORT` stays `UNVERIFIED`. `DESKTOP_LIVE_INTERCEPTION` stays `BLOCKED`. `PRODUCTION_CHILD_TRANSPORT_ENABLED` stays `false`.
+
+Public installers (`install.sh` / `install.ps1`) still pin downloaded source to tag `v1.1.4` until `v1.1.5` exists. Source RC testing uses `git checkout` of the exact SHA, not the one-liner.
+
+Runtime version is LightHaru/chatgpt-layer 1.1.5
 
 ## 1.1.4
 
