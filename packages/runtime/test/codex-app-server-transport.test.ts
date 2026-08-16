@@ -7,13 +7,16 @@ import { fileURLToPath } from "node:url";
 import { CodexSessionManager, type CodexManagedChild, type CodexProcessLauncher } from "../src/codex-sessions";
 import { sessionCodexHome, sessionSqliteHome } from "../src/codex-sessions/paths";
 import {
+  AbstractAppServerTransport,
   CodexAppServerError,
+  CodexSessionRouter,
   CodexSessionTransportRegistry,
   createFailClosedAppServerLauncher,
   createFakeTransport,
   createFixtureAppServerLauncher,
   createInjectedAppServerLauncher,
   performInitializeHandshake,
+  ThreadOwnerStore,
 } from "../src/codex-app-server";
 
 class FakeChild implements CodexManagedChild {
@@ -292,6 +295,318 @@ test("fixture child stdio initialize, thread/start, crash, malformed, delayed", 
       (err: unknown) => err instanceof CodexAppServerError,
     );
     await bad.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+class HoldCloseTransport extends AbstractAppServerTransport {
+  constructor(sessionId: string, gate: Promise<void>) {
+    super({
+      sessionId,
+      timeoutMs: 200,
+      send: async () => {},
+      closeSink: () => gate,
+    });
+  }
+}
+
+test("matching transport attaches; mismatched session id is rejected", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({ userRoot: root, sessionManager: mgr });
+    const ta = createFakeTransport(a.id, { timeoutMs: 200 });
+    registry.attach(a.id, ta);
+    assert.equal(registry.get(a.id), ta);
+
+    const tb = createFakeTransport(b.id, { timeoutMs: 200 });
+    assert.throws(
+      () => registry.attach(a.id, tb),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "session-mismatch",
+    );
+    assert.equal(registry.get(a.id), ta);
+    assert.equal(tb.isClosed, false);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("mismatched attach leaves the session empty", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({ userRoot: root, sessionManager: mgr });
+    const tb = createFakeTransport(b.id, { timeoutMs: 200 });
+    assert.throws(
+      () => registry.attach(a.id, tb),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "session-mismatch",
+    );
+    assert.equal(registry.get(a.id), undefined);
+    assert.equal(tb.isClosed, false);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("mismatched attachAndInitialize does not send initialize", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 200,
+    });
+    let initializes = 0;
+    const tb = createFakeTransport(b.id, {
+      timeoutMs: 200,
+      onRequest: (method) => {
+        if (method === "initialize") initializes += 1;
+      },
+    });
+    await assert.rejects(
+      registry.attachAndInitialize(a.id, tb),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "session-mismatch",
+    );
+    assert.equal(initializes, 0);
+    assert.equal(registry.get(a.id), undefined);
+    assert.equal(tb.isClosed, false);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("mismatched transport cannot receive routed traffic for another session", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const owners = new ThreadOwnerStore(root);
+    const registry = new CodexSessionTransportRegistry({ userRoot: root, sessionManager: mgr });
+    const tb = createFakeTransport(b.id, { timeoutMs: 200 });
+    assert.throws(() => registry.attach(a.id, tb), (err: unknown) => {
+      return err instanceof CodexAppServerError && err.kind === "session-mismatch";
+    });
+    const router = new CodexSessionRouter({
+      registry,
+      owners,
+      selectSession: () => a.id,
+      requestTimeoutMs: 200,
+    });
+    await assert.rejects(
+      router.routeNewThread({ sessionId: a.id }),
+      (err: unknown) => err instanceof CodexAppServerError,
+    );
+    assert.equal(registry.get(a.id), undefined);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("stale close of OLD transport does not delete NEW record", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({ userRoot: root, sessionManager: mgr });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const oldTransport = new HoldCloseTransport(a.id, gate);
+    registry.attach(a.id, oldTransport);
+    const stopping = registry.stop(a.id);
+    const next = createFakeTransport(a.id, { timeoutMs: 200 });
+    registry.attach(a.id, next);
+    assert.equal(registry.get(a.id), next);
+    release();
+    await stopping;
+    assert.equal(registry.get(a.id), next);
+    const started = await next.request("thread/start", {});
+    assert.ok((started.result as { thread: { id: string } }).thread.id);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("unexpected close of the current transport drops the registry entry", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({ userRoot: root, sessionManager: mgr });
+    const transport = createFakeTransport(a.id, { timeoutMs: 200 });
+    registry.attach(a.id, transport);
+    await transport.close();
+    assert.equal(registry.get(a.id), undefined);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("concurrent attachAndInitialize for one session: second is rejected", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 500,
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = createFakeTransport(a.id, {
+      timeoutMs: 500,
+      onRequest: async (method) => {
+        if (method === "initialize") {
+          await gate;
+          return { result: { protocolVersion: "test" } };
+        }
+      },
+    });
+    const second = createFakeTransport(a.id, { timeoutMs: 200 });
+    const pending = registry.attachAndInitialize(a.id, first);
+    await new Promise((resolve) => setImmediate(resolve));
+    await assert.rejects(
+      registry.attachAndInitialize(a.id, second),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "attach-in-progress",
+    );
+    assert.equal(second.isClosed, false);
+    release();
+    const record = await pending;
+    assert.equal(record.transport, first);
+    assert.equal(registry.get(a.id), first);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("sync attach is rejected while attachAndInitialize is in flight", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 500,
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = createFakeTransport(a.id, {
+      timeoutMs: 500,
+      onRequest: async (method) => {
+        if (method === "initialize") {
+          await gate;
+          return { result: { protocolVersion: "test" } };
+        }
+      },
+    });
+    const pending = registry.attachAndInitialize(a.id, first);
+    await new Promise((resolve) => setImmediate(resolve));
+    const other = createFakeTransport(a.id, { timeoutMs: 200 });
+    assert.throws(
+      () => registry.attach(a.id, other),
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "attach-in-progress",
+    );
+    release();
+    await pending;
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("failed handshake releases reservation so a later attach can succeed", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 200,
+    });
+    const failing = createFakeTransport(a.id, {
+      timeoutMs: 200,
+      onRequest: () => ({ error: { code: -32000, message: "nope" } }),
+    });
+    await assert.rejects(registry.attachAndInitialize(a.id, failing), /nope/);
+    assert.equal(registry.get(a.id), undefined);
+    const next = createFakeTransport(a.id, { timeoutMs: 200 });
+    const record = await registry.attachAndInitialize(a.id, next);
+    assert.equal(record.ready, true);
+    assert.equal(registry.get(a.id), next);
+    await registry.closeAll();
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("closeAll during handshake does not bind a later success", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 500,
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transport = createFakeTransport(a.id, {
+      timeoutMs: 500,
+      onRequest: async (method) => {
+        if (method === "initialize") {
+          await gate;
+          return { result: { protocolVersion: "test" } };
+        }
+      },
+    });
+    const pending = registry.attachAndInitialize(a.id, transport);
+    await new Promise((resolve) => setImmediate(resolve));
+    await registry.closeAll();
+    release();
+    await assert.rejects(
+      pending,
+      (err: unknown) => err instanceof CodexAppServerError && err.kind === "closed",
+    );
+    assert.equal(registry.get(a.id), undefined);
+    assert.equal(transport.isClosed, true);
+  } finally {
+    await removeRoot(root);
+  }
+});
+
+test("different sessions may initialize concurrently", async () => {
+  const root = tempRoot();
+  try {
+    const { mgr, a, b } = await runningSession(root);
+    const registry = new CodexSessionTransportRegistry({
+      userRoot: root,
+      sessionManager: mgr,
+      initializeTimeoutMs: 500,
+    });
+    const ta = createFakeTransport(a.id, { timeoutMs: 500 });
+    const tb = createFakeTransport(b.id, { timeoutMs: 500 });
+    const [ra, rb] = await Promise.all([
+      registry.attachAndInitialize(a.id, ta),
+      registry.attachAndInitialize(b.id, tb),
+    ]);
+    assert.equal(ra.transport, ta);
+    assert.equal(rb.transport, tb);
+    assert.equal(registry.get(a.id), ta);
+    assert.equal(registry.get(b.id), tb);
+    await registry.closeAll();
   } finally {
     await removeRoot(root);
   }

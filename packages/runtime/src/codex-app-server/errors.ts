@@ -22,6 +22,8 @@ export type CodexAppServerErrorKind =
   | "store-corrupt"
   | "session-not-running"
   | "already-attached"
+  | "attach-in-progress"
+  | "session-mismatch"
   | "not-running"
   | "owner-exists"
   | "missing-thread-id"

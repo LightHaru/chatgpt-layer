@@ -1,4 +1,5 @@
 import type { CodexSessionManager } from "../codex-sessions/manager";
+import { assertSessionId } from "../codex-sessions/ids";
 import { CodexAppServerError } from "./errors";
 import { performInitializeHandshake } from "./handshake";
 import type { CodexAppServerTransport } from "./transport";
@@ -25,12 +26,19 @@ export interface CodexSessionTransportRegistryOptions {
  * lifecycle child to already be RUNNING. One session owns at most one
  * transport; a future unified MS-2B process supplies both lifecycle and
  * stdio. Production invocation stays BLOCKED outside this registry.
+ *
+ * Ownership:
+ * - Before the registry accepts a transport (mismatch, duplicate, in-progress):
+ *   reject without closing or rewriting that transport.
+ * - After reservation / bind: the registry owns registration lifecycle and
+ *   closes the transport on handshake failure, stop, or closeAll.
  */
 export class CodexSessionTransportRegistry {
   private readonly sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
   private readonly initializeParams: unknown;
   private readonly initializeTimeoutMs?: number;
   private readonly records = new Map<string, SessionTransportRecord>();
+  private readonly attaching = new Set<string>();
   private closed = false;
 
   constructor(options: CodexSessionTransportRegistryOptions) {
@@ -60,15 +68,15 @@ export class CodexSessionTransportRegistry {
   attach(sessionId: string, transport: CodexAppServerTransport, ready = true): void {
     this.assertOpen();
     this.assertKnownSession(sessionId);
-    if (this.records.has(sessionId)) {
-      throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
-    }
+    this.assertTransportIdentity(sessionId, transport);
+    this.assertNotOccupied(sessionId);
     this.bind(sessionId, transport, ready, this.initializeParams, undefined);
   }
 
   /**
    * Attach then run initialize / initialized on that same transport.
-   * Still does not spawn a child.
+   * Still does not spawn a child. Handshake runs only after identity checks
+   * and an exclusive reservation.
    */
   async attachAndInitialize(
     sessionId: string,
@@ -76,22 +84,31 @@ export class CodexSessionTransportRegistry {
   ): Promise<SessionTransportRecord> {
     this.assertOpen();
     this.assertKnownSession(sessionId);
-    if (this.records.has(sessionId)) {
-      throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
-    }
+    this.assertTransportIdentity(sessionId, transport);
+    this.assertNotOccupied(sessionId);
+    this.attaching.add(sessionId);
     try {
       const handshake = await performInitializeHandshake(
         transport,
         this.initializeParams,
         this.initializeTimeoutMs,
       );
+      if (this.closed) {
+        await transport.close(new CodexAppServerError("closed", "app-server registry closed", sessionId));
+        throw new CodexAppServerError("closed", "app-server registry closed", sessionId);
+      }
+      this.assertNotBound(sessionId);
       this.bind(sessionId, transport, true, handshake.params, handshake.result);
       return this.records.get(sessionId)!;
     } catch (error) {
-      await transport.close(
-        error instanceof Error ? error : new CodexAppServerError("protocol", String(error), sessionId),
-      );
+      if (this.records.get(sessionId)?.transport !== transport) {
+        await transport.close(
+          error instanceof Error ? error : new CodexAppServerError("protocol", String(error), sessionId),
+        );
+      }
       throw error;
+    } finally {
+      this.attaching.delete(sessionId);
     }
   }
 
@@ -125,7 +142,10 @@ export class CodexSessionTransportRegistry {
     initializeResult: unknown,
   ): void {
     transport.onClose(() => {
-      this.records.delete(sessionId);
+      const current = this.records.get(sessionId);
+      if (current?.transport === transport) {
+        this.records.delete(sessionId);
+      }
     });
     this.records.set(sessionId, {
       sessionId,
@@ -137,7 +157,33 @@ export class CodexSessionTransportRegistry {
   }
 
   private assertKnownSession(sessionId: string): void {
+    assertSessionId(sessionId);
     this.sessionManager.getSessionStatus(sessionId);
+  }
+
+  private assertTransportIdentity(sessionId: string, transport: CodexAppServerTransport): void {
+    if (transport.sessionId !== sessionId) {
+      throw new CodexAppServerError(
+        "session-mismatch",
+        `transport session ${transport.sessionId} does not match registry session ${sessionId}`,
+        sessionId,
+      );
+    }
+  }
+
+  private assertNotOccupied(sessionId: string): void {
+    if (this.records.has(sessionId)) {
+      throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
+    }
+    if (this.attaching.has(sessionId)) {
+      throw new CodexAppServerError("attach-in-progress", "session attach already in progress", sessionId);
+    }
+  }
+
+  private assertNotBound(sessionId: string): void {
+    if (this.records.has(sessionId)) {
+      throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
+    }
   }
 
   private assertOpen(): void {

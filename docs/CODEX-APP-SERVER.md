@@ -136,6 +136,30 @@ not change empty-argv spawn and **does not launch a second child**.
 **attaches** a transport the caller already owns (tests inject fakes or a
 fixture). It does not require the MS-1 lifecycle to be RUNNING first.
 
+Identity: `transport.sessionId` must already equal the registry `sessionId`.
+Mismatch is `session-mismatch`. The registry never rewrites
+`transport.sessionId`. Handshake is not started on a mismatch.
+
+Reservation: `attachAndInitialize` takes an exclusive per-session reservation
+before handshake (`attaching`). A second `attachAndInitialize` or sync
+`attach` for that session is `attach-in-progress` until the first settles.
+A bound record is `already-attached`. Failed handshake closes the reserved
+transport, drops the reservation, and leaves no record so a later attach
+may retry. `closeAll` during handshake: later success must **not** bind;
+that transport is closed and the registry stays empty/closed.
+
+Stale close: `onClose` deletes the record only when
+`current.transport === transport` (object identity). A delayed close of OLD
+after NEW is attached must not drop NEW. An ordinary close of the current
+transport still removes the entry.
+
+Ownership:
+
+- Before acceptance (mismatch / duplicate / in-progress): reject **without**
+  mutating or closing the incoming transport.
+- After reservation or bind: the registry owns it and closes it on handshake
+  failure, `stop`, `closeAll`, or closed-during-handshake.
+
 | Event | Transport |
 |---|---|
 | `attach` / `attachAndInitialize` | register (optional handshake) — no spawn |
