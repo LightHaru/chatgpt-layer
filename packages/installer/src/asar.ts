@@ -48,14 +48,19 @@ export async function patchAsar(
   const extractDir = join(work, "src");
   const outAsar = join(work, "app.asar");
 
-  // Snapshot what was unpacked in the ORIGINAL asar before we touch anything;
-  // we'll feed an equivalent compact set back to createPackageWithOptions.
-  const originalUnpackOptions = collectUnpackOptions(asarPath);
+  // Never extractAll/getRawHeader the live dest: @electron/asar can keep that
+  // path mapped, and Windows then refuses to rename over it (EPERM) for the
+  // rest of the process. Read dest as bytes into a snapshot inode instead.
+  const snapshot = join(work, "src.asar");
   asar.uncache(asarPath);
 
   try {
-    asar.extractAll(asarPath, extractDir);
+    writeFileSync(snapshot, readFileSync(asarPath));
     asar.uncache(asarPath);
+    const originalUnpackOptions = collectUnpackOptions(snapshot);
+    asar.uncache(snapshot);
+    asar.extractAll(snapshot, extractDir);
+    asar.uncache(snapshot);
     await mutate(extractDir);
 
     await asar.createPackageWithOptions(extractDir, outAsar, {
@@ -276,4 +281,6 @@ function annotatePermError(e: unknown, target: string): Error {
 
 export function uncacheAsar(asarPath: string): void {
   asar.uncache(asarPath);
+  const uncacheAll = (asar as { uncacheAll?: () => void }).uncacheAll;
+  if (typeof uncacheAll === "function") uncacheAll();
 }

@@ -163,9 +163,11 @@ export async function writeSyntheticAsar(
     const packed = `${dest}.packed`;
     await asar.createPackageWithOptions(work, packed, { globOptions: { dot: true } });
     uncacheAsar(packed);
-    uncacheAsar(dest);
+    const bytes = readFileSync(packed);
+    uncacheAsar(packed);
+    try { unlinkSync(packed); } catch { /* packed leftover */ }
     try { unlinkSync(dest); } catch { /* dest may not exist */ }
-    renameSync(packed, dest);
+    writeFileSync(dest, bytes);
   } finally {
     await cleanupTempTree(work);
   }

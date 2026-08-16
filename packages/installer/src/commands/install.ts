@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { fileURLToPath } from "node:url";
 import { locateCodex, type CodexInstall } from "../platform.js";
 import { ensureUserPaths } from "../paths.js";
-import { backupOnce, patchAsar, readFileInAsar, readHeaderHash } from "../asar.js";
+import { backupOnce, patchAsar, readFileInAsar, readHeaderHash, uncacheAsar } from "../asar.js";
 import { setIntegrity, getIntegrity, canWriteAsarIntegrity } from "../integrity.js";
 import { writeFuse } from "../fuses.js";
 import { clearQuarantine, prepareCodeSigning, signCodexApp, signatureInfo } from "../codesign.js";
@@ -92,6 +92,7 @@ export async function install(opts: Opts = {}): Promise<void> {
   const backupFramework = join(paths.backup, "Electron Framework");
   let appBackupRefreshed = false;
   const alreadyPatched = hasCodexPlusPlusAsarMarker(codex.asarPath);
+  uncacheAsar(codex.asarPath);
   if (pristineAppBackup) {
     appBackupRefreshed = backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
       hasPatchMarker: alreadyPatched,
@@ -112,6 +113,7 @@ export async function install(opts: Opts = {}): Promise<void> {
   step(appBackupRefreshed ? "Backup refreshed" : "Backup ready");
 
   const { headerHash: currentAsarHash } = readHeaderHash(codex.asarPath);
+  uncacheAsar(codex.asarPath);
   const prior = readState(paths.stateFile);
   const originalAsarHash = resolveOriginalAsarHash({
     alreadyPatched,
