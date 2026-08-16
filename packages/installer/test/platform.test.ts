@@ -63,7 +63,7 @@ test("locateCodex prefers the Store desktop executable over the Codex helper on 
   }
 });
 
-test("resolveLinuxInstall supports am-will codex-app install directory", () => {
+test("resolveLinuxInstall supports am-will codex-app install directory", { skip: process.platform === "win32" }, () => {
   const root = mkdtempSync(join(tmpdir(), "codexpp-platform-"));
   try {
     const app = join(root, "codex-desktop");

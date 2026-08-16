@@ -6,6 +6,10 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 
 ## Unreleased
 
+### Changed
+
+- Cross-platform CI matrix: Ubuntu, macOS, and Windows x Node 20 and 22. POSIX rm of package dist dirs is replaced by an in-repo Node clean script. Test discovery no longer depends on shell glob expansion.
+
 ### Security
 
 - Enforce `TweakManifest.permissions` end-to-end as capability authorization (least privilege), not a process sandbox. Absent permissions stay legacy; a present list is strict; `[]` grants no optional capabilities. Historical `codex.windows` / `codex.views` aliases are preserved.
