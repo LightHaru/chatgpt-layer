@@ -12,6 +12,7 @@ This project uses semver for the installer, runtime, SDK, and published CLI pack
 - MS-2A review: attach-only session transport (no second child), byte-safe NDJSON, single server-request handler, type-safe request ids.
 - MS-2A registry isolation: transport.sessionId must match before handshake, stale onClose is object-identity checked, exclusive attach reservation, closeAll during handshake does not bind.
 - MS-2A registry owns in-flight attach transports: `attaching` is a sessionId→transport map; `stop`/`closeAll` close reserved handshake transports and await them; a deleted session does not bind after initialize.
+- Wait for `@electron/asar` createPackage output to settle on disk before package.json readability checks (pack-stream race on macOS/Windows).
 
 ### Changed
 
