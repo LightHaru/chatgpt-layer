@@ -56,6 +56,7 @@ Declare only what the tweak uses. Do not copy a full permission list.
 | `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
 | `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
 | `native-helper` | `launchHelper` / helper calls | Enforced. |
+| `codex-sessions` | `api.codex.sessions.list` / `getStatus` | Enforced. Read-only. See [multi-session](./CODEX-MULTI-SESSION.md). |
 | `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
 
 Aliases (equivalent, both accepted):

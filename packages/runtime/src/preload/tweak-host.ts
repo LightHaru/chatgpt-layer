@@ -20,6 +20,8 @@ import type {
   CodexCdpTarget,
   CodexRuntimeCapabilities,
   CodexRuntimeInfo,
+  CodexSessionMetadata,
+  CodexSessionStatus,
   CodexViewRef,
   CodexWindowRef,
   NativeHelperLaunchOptions,
@@ -374,6 +376,14 @@ function rendererCodexApi(tweakId: string, manifest: TweakManifest): NonNullable
       ? (options) =>
           ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options) as Promise<CodexWindowRef>
       : deny("codex-windows"),
+    sessions: {
+      list: surface.codexSessions
+        ? () => ipcRenderer.invoke("codexpp:codex-sessions-list", tweakId) as Promise<CodexSessionMetadata[]>
+        : deny("codex-sessions"),
+      getStatus: surface.codexSessions
+        ? (id) => ipcRenderer.invoke("codexpp:codex-sessions-status", tweakId, id) as Promise<CodexSessionStatus>
+        : deny("codex-sessions"),
+    },
   };
 }
 

@@ -75,6 +75,7 @@ export type TweakPermission =
   | "codex-windows"
   | "codex-views"
   | "codex-cdp"
+  | "codex-sessions"
   | "codex.windows"
   | "codex.views"
   | "native-module"
@@ -92,6 +93,7 @@ export const VALID_TWEAK_PERMISSIONS = [
   "codex-windows",
   "codex-views",
   "codex-cdp",
+  "codex-sessions",
   "codex.windows",
   "codex.views",
   "native-module",
@@ -399,6 +401,35 @@ export interface TweakFs {
   exists(relPath: string): Promise<boolean>;
 }
 
+export type CodexSessionLifecycle = "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "FAILED";
+
+export interface CodexSessionMetadata {
+  id: string;
+  label: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  lastStartedAt?: string;
+  lastStoppedAt?: string;
+  lastExit?: {
+    at: string;
+    code: number | null;
+    signal: string | null;
+    reason: "requested" | "unexpected" | "launch-failed";
+  };
+}
+
+export interface CodexSessionStatus {
+  id: string;
+  lifecycle: CodexSessionLifecycle;
+  metadata: CodexSessionMetadata;
+}
+
+export interface CodexSessionsApi {
+  list(): Promise<CodexSessionMetadata[]>;
+  getStatus(id: string): Promise<CodexSessionStatus>;
+}
+
 export interface CodexApi {
   /** Runtime and capability metadata for the current Codex host. */
   runtime: CodexRuntimeApi;
@@ -410,6 +441,8 @@ export interface CodexApi {
   cdp: CodexCdpApi;
   /** Native module, AppKit/Metal view, and helper-process bridge. */
   native: CodexNativeApi;
+  /** Isolated Codex child-process sessions owned by Layer. Read-only in MS-1. */
+  sessions: CodexSessionsApi;
 
   /**
    * Main-only: create an embedded BrowserView registered with Codex's host

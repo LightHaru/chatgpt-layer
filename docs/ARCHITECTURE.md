@@ -28,12 +28,20 @@
 │  │       ├─ manifest.json                                               │
 │  │       └─ index.js                                                    │
 │  ├─ tweak-data/<tweak-id>/   — per-tweak filesystem sandbox             │
+│  ├─ codex-sessions/          — isolated session homes (empty by default)│
 │  ├─ backup/                  — original asar / plist / framework binary │
 │  ├─ log/                                                                │
 │  ├─ state.json               — installer records                        │
 │  └─ config.json              — user preferences (enable flags etc.)     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
+
+
+## Multi-session foundation
+
+`<user-data-dir>/codex-sessions/` is Layer-owned isolated child-process storage.
+It is empty by default; MS-1 does not auto-start sessions or change ChatGPT's
+single-session behavior. See [Multi-session foundation (MS-1)](./CODEX-MULTI-SESSION.md).
 
 ## Tweak update checks
 

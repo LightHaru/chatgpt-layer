@@ -93,6 +93,7 @@ and `codex.views` are equivalent to `codex-windows` and `codex-views`.
 | `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
 | `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
 | `native-helper` | `launchHelper` / helper calls | Enforced. |
+| `codex-sessions` | `api.codex.sessions.list` / `getStatus` | Enforced. Read-only session metadata. |
 | `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
 
 Main-process IPC authorizes when a tweak identity is present. Renderer filtering

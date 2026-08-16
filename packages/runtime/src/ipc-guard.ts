@@ -26,6 +26,8 @@ export const PRIVILEGED_IPC_CHANNELS = [
   "codexpp:codex-view-create",
   "codexpp:codex-view-call",
   "codexpp:tweak-fs",
+  "codexpp:codex-sessions-list",
+  "codexpp:codex-sessions-status",
   "codexpp:copy-text",
   "codexpp:reveal",
 ] as const;

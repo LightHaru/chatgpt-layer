@@ -35,6 +35,7 @@ export type CanonicalTweakPermission =
   | "codex-windows"
   | "codex-views"
   | "codex-cdp"
+  | "codex-sessions"
   | "native-module"
   | "native-view"
   | "native-helper";
@@ -73,6 +74,8 @@ export const TWEAK_CAPABILITY_IPC_CHANNELS = {
   "codexpp:codex-runtime-capabilities": "codex-runtime",
   "codexpp:codex-cdp-status": "codex-cdp",
   "codexpp:codex-cdp-targets": "codex-cdp",
+  "codexpp:codex-sessions-list": "codex-sessions",
+  "codexpp:codex-sessions-status": "codex-sessions",
 } as const;
 
 export type TweakCapabilityIpcChannel = keyof typeof TWEAK_CAPABILITY_IPC_CHANNELS;
@@ -97,6 +100,7 @@ export interface TweakApiSurface {
   nativeModule: boolean;
   nativeView: boolean;
   nativeHelper: boolean;
+  codexSessions: boolean;
 }
 
 export type TweakApiSlot = "present" | "denied" | "omitted";
@@ -114,6 +118,7 @@ export interface TweakApiPlan {
   nativeModule: TweakApiSlot;
   nativeView: TweakApiSlot;
   nativeHelper: TweakApiSlot;
+  codexSessions: TweakApiSlot;
 }
 
 export interface TweakIpcBridge {
@@ -206,6 +211,7 @@ export function tweakApiSurface(
     nativeModule: hasTweakPermission(manifest, "native-module"),
     nativeView: hasTweakPermission(manifest, "native-view"),
     nativeHelper: hasTweakPermission(manifest, "native-helper"),
+    codexSessions: hasTweakPermission(manifest, "codex-sessions"),
   };
 }
 
@@ -217,7 +223,8 @@ export function hasAnyCodexApi(surface: TweakApiSurface): boolean {
     surface.codexCdp ||
     surface.nativeModule ||
     surface.nativeView ||
-    surface.nativeHelper
+    surface.nativeHelper ||
+    surface.codexSessions
   );
 }
 
@@ -241,6 +248,7 @@ export function planTweakApi(manifest: Pick<TweakManifest, "permissions">): Twea
     nativeModule: slot(surface.nativeModule, "denied"),
     nativeView: slot(surface.nativeView, "denied"),
     nativeHelper: slot(surface.nativeHelper, "denied"),
+    codexSessions: slot(surface.codexSessions, "denied"),
   };
 }
 

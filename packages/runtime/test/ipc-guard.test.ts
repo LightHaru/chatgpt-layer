@@ -27,6 +27,8 @@ test("privileged IPC channels include install, self-update, native, and fs", () 
   assert.equal(isPrivilegedIpcChannel("codexpp:codex-window-focus"), true);
   assert.equal(isPrivilegedIpcChannel("codexpp:codex-window-show"), true);
   assert.equal(isPrivilegedIpcChannel("codexpp:tweak-fs"), true);
+  assert.equal(isPrivilegedIpcChannel("codexpp:codex-sessions-list"), true);
+  assert.equal(isPrivilegedIpcChannel("codexpp:codex-sessions-status"), true);
   assert.equal(isPrivilegedIpcChannel("codexpp:copy-text"), true);
   assert.equal(isPrivilegedIpcChannel("codexpp:reveal"), true);
   assert.equal(isPrivilegedIpcChannel("codexpp:list-tweaks"), false);

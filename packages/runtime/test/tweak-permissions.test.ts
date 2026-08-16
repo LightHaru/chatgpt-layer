@@ -75,6 +75,7 @@ test("legacy absent permissions keeps old behavior", () => {
     "native-module",
     "native-view",
     "native-helper",
+    "codex-sessions",
   ] as TweakPermission[]) {
     assert.equal(hasTweakPermission(legacy, permission), true, permission);
   }
@@ -85,6 +86,7 @@ test("legacy absent permissions keeps old behavior", () => {
   assert.equal(plan.codex, "present");
   assert.equal(plan.codexWindows, "present");
   assert.equal(plan.nativeModule, "present");
+  assert.equal(plan.codexSessions, "present");
 });
 
 test("permissions: [] grants no optional capabilities", () => {
@@ -97,11 +99,13 @@ test("permissions: [] grants no optional capabilities", () => {
   assert.equal(surface.filesystem, false);
   assert.equal(surface.codexWindows, false);
   assert.equal(surface.nativeHelper, false);
+  assert.equal(surface.codexSessions, false);
   const plan = planTweakApi(empty);
   assert.equal(plan.settings, "omitted");
   assert.equal(plan.ipc, "denied");
   assert.equal(plan.fs, "denied");
   assert.equal(plan.codex, "omitted");
+  assert.equal(plan.codexSessions, "denied");
 });
 
 test("settings permission allows settings API", () => {
@@ -342,6 +346,22 @@ test("main IPC handlers authorize tweak identity for capability channels", () =>
   assert.match(mainSource, /privilegedHandle\("codexpp:codex-window-create"/);
   assert.match(mainSource, /privilegedHandle\("codexpp:codex-window-primary"/);
   assert.match(mainSource, /privilegedHandle\("codexpp:tweak-fs"/);
+});
+
+
+test("codex-sessions permission gates list/status capability", () => {
+  assert.equal(tweakPermissionForIpcChannel("codexpp:codex-sessions-list"), "codex-sessions");
+  assert.equal(tweakPermissionForIpcChannel("codexpp:codex-sessions-status"), "codex-sessions");
+  const unauthorized = snapshot({ permissions: ["settings"] });
+  assert.throws(
+    () => authorizeTweakCapability(unauthorized, unauthorized.id, "codex-sessions"),
+    /must declare codex-sessions permission/,
+  );
+  const allowed = snapshot({ permissions: ["codex-sessions"] });
+  assert.equal(authorizeTweakCapability(allowed, allowed.id, "codex-sessions").id, allowed.id);
+  assert.equal(planTweakApi(allowed).codexSessions, "present");
+  assert.equal(planTweakApi(allowed).codex, "present");
+  assert.equal(planTweakApi(manifest({ permissions: [] })).codexSessions, "denied");
 });
 
 function extractHandlerBody(source: string, channel: string): string {

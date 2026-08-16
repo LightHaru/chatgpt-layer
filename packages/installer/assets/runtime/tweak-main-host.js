@@ -36,6 +36,7 @@ const tweak_lifecycle_1 = require("./tweak-lifecycle");
 const native_bridge_1 = require("./native-bridge");
 const native_paths_1 = require("./native-paths");
 const codex_runtime_probe_1 = require("./codex-runtime-probe");
+const codex_sessions_1 = require("./codex-sessions");
 const tweak_permissions_1 = require("./tweak-permissions");
 const tweak_fs_sandbox_1 = require("./tweak-fs-sandbox");
 const config_state_1 = require("./config-state");
@@ -466,6 +467,14 @@ function makeCodexApi(tweak) {
             ? guard("codex-views", codex_windows_1.createCodexBrowserView)
             : deny("codex-views"),
         createWindow: surface.codexWindows ? guard("codex-windows", codex_windows_1.createCodexWindow) : deny("codex-windows"),
+        sessions: {
+            list: surface.codexSessions
+                ? async () => (0, codex_sessions_1.requireCodexSessionManager)().listSessions()
+                : deny("codex-sessions"),
+            getStatus: surface.codexSessions
+                ? async (id) => (0, codex_sessions_1.requireCodexSessionManager)().getSessionStatus(id)
+                : deny("codex-sessions"),
+        },
     };
 }
 exports.tweakLifecycleDeps = {

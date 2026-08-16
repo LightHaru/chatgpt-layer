@@ -100,6 +100,13 @@ import {
   tweakState,
 } from "./tweak-main-host";
 import { ensureTweakDataDir, resolveTweakDataPath } from "./tweak-fs-sandbox";
+import {
+  CodexSessionManager,
+  assertSessionId,
+  createNodeCodexProcessLauncher,
+  resolveTrustedCodexExecutable,
+  setCodexSessionManager,
+} from "./codex-sessions";
 import type {
   CodexViewCreateOptions,
   NativeHelperLaunchOptions,
@@ -220,10 +227,44 @@ if (isCodexPlusPlusSafeModeEnabled()) {
   log("warn", "safe mode is enabled; tweaks will not be loaded");
 }
 
+const sessionManager = new CodexSessionManager({
+  userRoot,
+  launcher: createNodeCodexProcessLauncher({
+    resolveExecutable: () => {
+      let resourcesPath: string | null = null;
+      let appPath: string | null = null;
+      try {
+        const info = currentRuntimeInfo();
+        resourcesPath = info.resourcesPath;
+        appPath = info.appPath;
+      } catch {}
+      if (!resourcesPath) {
+        const fromProcess = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+        if (typeof fromProcess === "string") resourcesPath = fromProcess;
+      }
+      if (!appPath) {
+        try {
+          appPath = app.getAppPath();
+        } catch {
+          appPath = null;
+        }
+      }
+      return resolveTrustedCodexExecutable({
+        platform: process.platform,
+        resourcesPath,
+        appPath,
+      });
+    },
+  }),
+  log,
+});
+setCodexSessionManager(sessionManager);
+
 // 2. Initial tweak discovery + main-scope load.
 loadAllMainTweaks();
 
-app.on("will-quit", () => {
+let sessionShutdownStarted = false;
+app.on("will-quit", (event) => {
   stopAllMainTweaks();
   nativeBridge.disposeAll();
   disposeAllOwlViews();
@@ -233,6 +274,17 @@ app.on("will-quit", () => {
       t.storage.flush();
     } catch {}
   }
+  if (sessionShutdownStarted) return;
+  if (!sessionManager.hasLiveChildren()) return;
+  event.preventDefault();
+  sessionShutdownStarted = true;
+  const failSafe = setTimeout(() => {
+    app.quit();
+  }, 3000);
+  void sessionManager.shutdownAll({ timeoutMs: 3000 }).finally(() => {
+    clearTimeout(failSafe);
+    app.quit();
+  });
 });
 
 function privilegedHandle(channel: string, listener: (...args: any[]) => unknown): void {
@@ -553,6 +605,18 @@ privilegedHandle("codexpp:native-helper-call",
     return nativeBridge.callHelper(tweak.manifest.id, helperId, method, payload, timeoutMs);
   },
 );
+privilegedHandle("codexpp:codex-sessions-list", (_e, tweakId: string, extra?: unknown) => {
+  assertAuthorizedTweak(tweakId, "codex-sessions");
+  if (extra !== undefined) throw new Error("unexpected payload");
+  return sessionManager.listSessions();
+});
+privilegedHandle("codexpp:codex-sessions-status", (_e, tweakId: string, sessionId: string, extra?: unknown) => {
+  assertAuthorizedTweak(tweakId, "codex-sessions");
+  if (typeof sessionId !== "string") throw new Error("invalid session id");
+  assertSessionId(sessionId);
+  if (extra !== undefined) throw new Error("unexpected payload");
+  return sessionManager.getSessionStatus(sessionId);
+});
 
 privilegedHandle("codexpp:reveal", (_e, p: string) => {
   shell.openPath(p).catch(() => {});

@@ -62,6 +62,10 @@ Types and interfaces:
 - [`CodexCdpStatus`](#codexcdpstatus)
 - [`CodexCdpTarget`](#codexcdptarget)
 - [`CodexCdpApi`](#codexcdpapi)
+- [`CodexSessionLifecycle`](#codexsessionlifecycle)
+- [`CodexSessionMetadata`](#codexsessionmetadata)
+- [`CodexSessionStatus`](#codexsessionstatus)
+- [`CodexSessionsApi`](#codexsessionsapi)
 - [`NativeModuleKind`](#nativemodulekind)
 - [`NativeModuleLoadOptions`](#nativemoduleloadoptions)
 - [`NativeModuleRef`](#nativemoduleref)
@@ -136,6 +140,7 @@ const VALID_TWEAK_PERMISSIONS = [
   "codex-windows",
   "codex-views",
   "codex-cdp",
+  "codex-sessions",
   "codex.windows",
   "codex.views",
   "native-module",
@@ -499,6 +504,7 @@ interface CodexApi {
   views: CodexViewsApi;
   cdp: CodexCdpApi;
   native: CodexNativeApi;
+  sessions: CodexSessionsApi;
   createBrowserView(options: CodexCreateViewOptions): Promise<unknown>;
   createWindow(options: CodexCreateWindowOptions): Promise<CodexWindowRef>;
 }
@@ -514,6 +520,11 @@ currently observes.
 
 `createWindow()` and `createBrowserView()` are kept for backwards
 compatibility. Prefer the namespaced APIs for new tweaks.
+
+`sessions` is read-only in MS-1 (`list` / `getStatus`). It requires the
+`codex-sessions` permission. Sessions are isolated child processes with
+Layer-owned storage, not extra ChatGPT windows. See
+[Multi-session foundation](../CODEX-MULTI-SESSION.md).
 
 ## `CodexRuntimeType`
 
@@ -681,6 +692,59 @@ interface CodexCdpApi {
 ```
 
 `listTargets()` returns an empty array unless CDP is already enabled.
+
+## `CodexSessionLifecycle`
+
+```ts
+type CodexSessionLifecycle = "STOPPED" | "STARTING" | "RUNNING" | "STOPPING" | "FAILED";
+```
+
+## `CodexSessionMetadata`
+
+```ts
+interface CodexSessionMetadata {
+  id: string;
+  label: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  lastStartedAt?: string;
+  lastStoppedAt?: string;
+  lastExit?: {
+    at: string;
+    code: number | null;
+    signal: string | null;
+    reason: "requested" | "unexpected" | "launch-failed";
+  };
+}
+```
+
+Opaque `id` values look like `session_` plus 24 lowercase hex characters.
+Labels are display-only. Metadata never includes tokens, env, pid, or paths.
+
+## `CodexSessionStatus`
+
+```ts
+interface CodexSessionStatus {
+  id: string;
+  lifecycle: CodexSessionLifecycle;
+  metadata: CodexSessionMetadata;
+}
+```
+
+Renderer-safe. No `ChildProcess`, stdout, or filesystem fields.
+
+## `CodexSessionsApi`
+
+```ts
+interface CodexSessionsApi {
+  list(): Promise<CodexSessionMetadata[]>;
+  getStatus(id: string): Promise<CodexSessionStatus>;
+}
+```
+
+Read-only. The tweak manifest must declare `codex-sessions`. Create / start /
+stop are main-process only and are dormant by default.
 
 ## `NativeModuleKind`
 
