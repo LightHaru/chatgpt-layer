@@ -1482,7 +1482,7 @@ function updateSummary(check: CodexPlusPlusUpdateCheck | null): string {
 
 function updateChannelSummary(config: CodexPlusPlusConfig): string {
   if (config.updateChannel === "custom") {
-    return `${config.updateRepo || "b-nnett/codex-plusplus"} ${config.updateRef || "(no ref set)"}`;
+    return `${config.updateRepo || "LightHaru/chatgpt-layer"} ${config.updateRef || "(no ref set)"}`;
   }
   if (config.updateChannel === "prerelease") {
     return "Use the newest published GitHub release, including prereleases.";
