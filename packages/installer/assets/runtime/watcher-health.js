@@ -6,6 +6,7 @@ const node_child_process_1 = require("node:child_process");
 const node_fs_1 = require("node:fs");
 const node_os_1 = require("node:os");
 const node_path_1 = require("node:path");
+const ipc_guard_1 = require("./ipc-guard");
 const LAUNCHD_LABEL = "com.codexplusplus.watcher";
 const WATCHER_LOG = (0, node_path_1.join)((0, node_os_1.homedir)(), "Library", "Logs", "codex-plusplus-watcher.log");
 function getWatcherHealth(userRoot) {
@@ -20,11 +21,11 @@ function getWatcherHealth(userRoot) {
     });
     if (!state)
         return summarize("none", checks);
-    const autoUpdate = config.codexPlusPlus?.autoUpdate !== false;
+    const autoUpdate = (0, ipc_guard_1.isLayerAutoUpdateEnabled)(config.codexPlusPlus?.autoUpdate);
     checks.push({
-        name: "Automatic refresh",
+        name: "Layer self-update",
         status: autoUpdate ? "ok" : "warn",
-        detail: autoUpdate ? "enabled" : "disabled in Codex++ config",
+        detail: autoUpdate ? "enabled" : "disabled (opt-in; default off)",
     });
     checks.push({
         name: "Watcher kind",
@@ -69,7 +70,7 @@ function selfUpdateCheck(state) {
         };
     }
     if (state.status === "disabled") {
-        return { name: "last Codex++ update", status: "warn", detail: `skipped ${at}: automatic refresh disabled` };
+        return { name: "last Codex++ update", status: "warn", detail: `skipped ${at}: Layer self-update disabled` };
     }
     if (state.status === "updated") {
         return { name: "last Codex++ update", status: "ok", detail: `updated ${at} to ${state.latestVersion ?? "new release"}` };

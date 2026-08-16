@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { isLayerAutoUpdateEnabled } from "./ipc-guard";
 
 type CheckStatus = "ok" | "warn" | "error";
 
@@ -57,11 +58,11 @@ export function getWatcherHealth(userRoot: string): WatcherHealth {
 
   if (!state) return summarize("none", checks);
 
-  const autoUpdate = config.codexPlusPlus?.autoUpdate !== false;
+  const autoUpdate = isLayerAutoUpdateEnabled(config.codexPlusPlus?.autoUpdate);
   checks.push({
-    name: "Automatic refresh",
+    name: "Layer self-update",
     status: autoUpdate ? "ok" : "warn",
-    detail: autoUpdate ? "enabled" : "disabled in Codex++ config",
+    detail: autoUpdate ? "enabled" : "disabled (opt-in; default off)",
   });
 
   checks.push({
@@ -112,7 +113,7 @@ function selfUpdateCheck(state: SelfUpdateState): WatcherHealthCheck {
     };
   }
   if (state.status === "disabled") {
-    return { name: "last Codex++ update", status: "warn", detail: `skipped ${at}: automatic refresh disabled` };
+    return { name: "last Codex++ update", status: "warn", detail: `skipped ${at}: Layer self-update disabled` };
   }
   if (state.status === "updated") {
     return { name: "last Codex++ update", status: "ok", detail: `updated ${at} to ${state.latestVersion ?? "new release"}` };

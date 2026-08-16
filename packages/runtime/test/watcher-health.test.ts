@@ -16,27 +16,38 @@ test("watcher health reports missing install state as not ready", () => {
   });
 });
 
-test("watcher health warns when automatic refresh is disabled", () => {
+test("watcher health treats missing Layer self-update as disabled", () => {
   withTempDir((root) => {
-    writeFileSync(
-      join(root, "state.json"),
-      JSON.stringify({ version: "0.1.2", watcher: "none", appRoot: "/missing" }),
-    );
-    writeFileSync(
-      join(root, "config.json"),
-      JSON.stringify({ codexPlusPlus: { autoUpdate: false } }),
-    );
+    writeInstallState(root);
+
+    const check = layerSelfUpdateCheck(root);
+    assert.equal(check?.status, "warn");
+    assert.equal(check?.detail, "disabled (opt-in; default off)");
+  });
+});
+
+test("watcher health treats Layer self-update false as disabled", () => {
+  withTempDir((root) => {
+    writeInstallState(root, { autoUpdate: false });
 
     const health = getWatcherHealth(root);
-
+    const check = health.checks.find((item) => item.name === "Layer self-update");
+    assert.equal(check?.status, "warn");
+    assert.equal(check?.detail, "disabled (opt-in; default off)");
     assert.equal(
-      health.checks.find((check) => check.name === "Automatic refresh")?.status,
-      "warn",
-    );
-    assert.equal(
-      health.checks.find((check) => check.name === "Watcher kind")?.status,
+      health.checks.find((item) => item.name === "Watcher kind")?.status,
       "error",
     );
+  });
+});
+
+test("watcher health treats Layer self-update true as enabled", () => {
+  withTempDir((root) => {
+    writeInstallState(root, { autoUpdate: true });
+
+    const check = layerSelfUpdateCheck(root);
+    assert.equal(check?.status, "ok");
+    assert.equal(check?.detail, "enabled");
   });
 });
 
@@ -54,6 +65,20 @@ Fix:
   assert.equal(check.status, "warn");
   assert.equal(check.detail, "auto-repair needs app permissions; run `codexplusplus repair` from Terminal");
 });
+
+function writeInstallState(root: string, codexPlusPlus?: { autoUpdate?: boolean }): void {
+  writeFileSync(
+    join(root, "state.json"),
+    JSON.stringify({ version: "0.1.2", watcher: "none", appRoot: "/missing" }),
+  );
+  if (codexPlusPlus) {
+    writeFileSync(join(root, "config.json"), JSON.stringify({ codexPlusPlus }));
+  }
+}
+
+function layerSelfUpdateCheck(root: string) {
+  return getWatcherHealth(root).checks.find((check) => check.name === "Layer self-update");
+}
 
 function withTempDir(fn: (root: string) => void): void {
   const root = mkdtempSync(join(tmpdir(), "codexpp-watcher-health-"));
