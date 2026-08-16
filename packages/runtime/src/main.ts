@@ -46,9 +46,11 @@ import type {
 } from "@codex-plusplus/sdk";
 import {
   DEFAULT_TWEAK_STORE_INDEX_URL,
+  assertStoreIndexMatchesPin,
   isFullCommitSha,
   normalizeGitHubRepo,
   normalizeStoreRegistry,
+  resolveTweakStoreIndexUrl,
   shuffleStoreEntries,
   storeArchiveUrl,
   type TweakStorePublishSubmission,
@@ -56,6 +58,12 @@ import {
   type TweakStoreRegistry,
   type TweakStorePlatform,
 } from "./tweak-store";
+import {
+  assertPrivilegedIpcSender,
+  isLayerAutoUpdateEnabled,
+  isPrivilegedIpcSender,
+  stripRendererUpdateRepo,
+} from "./ipc-guard";
 import { maybeStartBrowserUiServer } from "./browser-ui";
 
 const userRoot = process.env.CODEX_PLUSPLUS_USER_ROOT;
@@ -68,6 +76,8 @@ if (!userRoot || !runtimeDir) {
 }
 
 const PRELOAD_PATH = resolve(runtimeDir, "preload.js");
+const GUEST_PRELOAD_PATH = resolve(runtimeDir, "guest-preload.js");
+const untrustedWebContentsIds = new Set<number>();
 const TWEAKS_DIR = join(userRoot, "tweaks");
 const LOG_DIR = join(userRoot, "log");
 const LOG_FILE = join(LOG_DIR, "main.log");
@@ -79,7 +89,7 @@ const SELF_UPDATE_STATE_FILE = join(userRoot, "self-update-state.json");
 const SIGNED_CODEX_BACKUP = join(userRoot, "backup", "Codex.app");
 const CODEX_PLUSPLUS_VERSION = "1.1.2";
 const CODEX_PLUSPLUS_REPO = "LightHaru/chatgpt-layer";
-const TWEAK_STORE_INDEX_URL = process.env.CODEX_PLUSPLUS_STORE_INDEX_URL ?? DEFAULT_TWEAK_STORE_INDEX_URL;
+const TWEAK_STORE_INDEX_URL = resolveTweakStoreIndexUrl();
 const CODEX_WINDOW_SERVICES_KEY = "__codexpp_window_services__";
 
 mkdirSync(LOG_DIR, { recursive: true });
@@ -158,6 +168,7 @@ interface TweakUpdateCheck {
   latestTag: string | null;
   releaseUrl: string | null;
   updateAvailable: boolean;
+  pinnedSha?: string;
   error?: string;
 }
 
@@ -176,7 +187,7 @@ function writeState(s: PersistedState): void {
   }
 }
 function isCodexPlusPlusAutoUpdateEnabled(): boolean {
-  return readState().codexPlusPlus?.autoUpdate !== false;
+  return isLayerAutoUpdateEnabled(readState().codexPlusPlus?.autoUpdate);
 }
 function setCodexPlusPlusAutoUpdate(enabled: boolean): void {
   const s = readState();
@@ -474,7 +485,9 @@ const tweakLifecycleDeps = {
 // Electron 35). The deprecated `setPreloads` path silently no-ops in some
 // configurations (notably with sandboxed renderers), so registerPreloadScript
 // is the only reliable way to inject into Codex's BrowserWindows.
-function registerPreload(s: Electron.Session, label: string): void {
+function registerPreload(s: Electron.Session, label: string, kind: "full" | "guest" = "full"): void {
+  const filePath = kind === "guest" && existsSync(GUEST_PRELOAD_PATH) ? GUEST_PRELOAD_PATH : PRELOAD_PATH;
+  const id = kind === "guest" ? "codex-plusplus-guest" : "codex-plusplus";
   try {
     const reg = (s as unknown as {
       registerPreloadScript?: (opts: {
@@ -484,16 +497,16 @@ function registerPreload(s: Electron.Session, label: string): void {
       }) => string;
     }).registerPreloadScript;
     if (typeof reg === "function") {
-      reg.call(s, { type: "frame", filePath: PRELOAD_PATH, id: "codex-plusplus" });
-      log("info", `preload registered (registerPreloadScript) on ${label}:`, PRELOAD_PATH);
+      reg.call(s, { type: "frame", filePath, id });
+      log("info", `preload registered (registerPreloadScript) on ${label}:`, filePath);
       return;
     }
     // Fallback for older Electron versions.
     const existing = s.getPreloads();
-    if (!existing.includes(PRELOAD_PATH)) {
-      s.setPreloads([...existing, PRELOAD_PATH]);
+    if (!existing.includes(filePath)) {
+      s.setPreloads([...existing, filePath]);
     }
-    log("info", `preload registered (setPreloads) on ${label}:`, PRELOAD_PATH);
+    log("info", `preload registered (setPreloads) on ${label}:`, filePath);
   } catch (e) {
     if (e instanceof Error && e.message.includes("existing ID")) {
       log("info", `preload already registered on ${label}:`, PRELOAD_PATH);
@@ -509,7 +522,7 @@ app.whenReady().then(() => {
     log("warn", "safe mode is enabled; preload will not be registered");
     return;
   }
-  registerPreload(session.defaultSession, "defaultSession");
+  registerPreload(session.defaultSession, "defaultSession", "full");
   maybeStartBrowserUiServer({
     getWindowServices: getCodexWindowServices,
     log,
@@ -518,7 +531,8 @@ app.whenReady().then(() => {
 
 app.on("session-created", (s) => {
   if (isCodexPlusPlusSafeModeEnabled()) return;
-  registerPreload(s, "session-created");
+  if (s === session.defaultSession) return;
+  registerPreload(s, "session-created", "guest");
 });
 
 // DIAGNOSTIC: log every webContents creation. Useful for verifying our
@@ -562,6 +576,22 @@ app.on("will-quit", () => {
   }
 });
 
+function markUntrustedWebContents(wc: Electron.WebContents): void {
+  untrustedWebContentsIds.add(wc.id);
+  wc.once("destroyed", () => { untrustedWebContentsIds.delete(wc.id); });
+}
+
+function privilegedHandle(channel: string, listener: (...args: any[]) => unknown): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertPrivilegedIpcSender(channel, event.sender, untrustedWebContentsIds);
+    return listener(event, ...args);
+  });
+}
+
+ipcMain.on("codexpp:privileged-frame", (event) => {
+  event.returnValue = isPrivilegedIpcSender(event.sender, untrustedWebContentsIds);
+});
+
 // 3. IPC: expose tweak metadata + reveal-in-finder.
 ipcMain.handle("codexpp:list-tweaks", async (_e, opts?: { force?: boolean } | boolean) => {
   const force = opts === true || (opts !== null && typeof opts === "object" && opts.force === true);
@@ -580,7 +610,7 @@ ipcMain.handle("codexpp:get-config", () => {
   const sourceRoot = installerState?.sourceRoot ?? fallbackSourceRoot();
   return {
     version: CODEX_PLUSPLUS_VERSION,
-    autoUpdate: s.codexPlusPlus?.autoUpdate !== false,
+    autoUpdate: isLayerAutoUpdateEnabled(s.codexPlusPlus?.autoUpdate),
     safeMode: s.codexPlusPlus?.safeMode === true,
     updateChannel: s.codexPlusPlus?.updateChannel ?? "stable",
     updateRepo: s.codexPlusPlus?.updateRepo ?? CODEX_PLUSPLUS_REPO,
@@ -591,17 +621,17 @@ ipcMain.handle("codexpp:get-config", () => {
   };
 });
 
-ipcMain.handle("codexpp:set-auto-update", (_e, enabled: boolean) => {
+privilegedHandle("codexpp:set-auto-update", (_e, enabled: boolean) => {
   setCodexPlusPlusAutoUpdate(!!enabled);
   return { autoUpdate: isCodexPlusPlusAutoUpdateEnabled() };
 });
 
-ipcMain.handle("codexpp:set-update-config", (_e, config: {
+privilegedHandle("codexpp:set-update-config", (_e, config: {
   updateChannel?: SelfUpdateChannel;
   updateRepo?: string;
   updateRef?: string;
 }) => {
-  setCodexPlusPlusUpdateConfig(config);
+  setCodexPlusPlusUpdateConfig(stripRendererUpdateRepo(config ?? {}));
   const s = readState();
   return {
     updateChannel: s.codexPlusPlus?.updateChannel ?? "stable",
@@ -614,7 +644,7 @@ ipcMain.handle("codexpp:check-codexpp-update", async (_e, force?: boolean) => {
   return ensureCodexPlusPlusUpdateCheck(force === true);
 });
 
-ipcMain.handle("codexpp:run-codexpp-update", async () => {
+privilegedHandle("codexpp:run-codexpp-update", async () => {
   const sourceRoot = readInstallerState()?.sourceRoot ?? fallbackSourceRoot();
   if (!sourceRoot) {
     throw new Error("Codex++ source CLI was not found. Run the installer once, then try again.");
@@ -658,7 +688,7 @@ ipcMain.handle("codexpp:get-tweak-store", async () => {
   };
 });
 
-ipcMain.handle("codexpp:install-store-tweak", async (_e, id: string) => {
+privilegedHandle("codexpp:install-store-tweak", async (_e, id: string) => {
   const { registry } = await fetchTweakStoreRegistry();
   const entry = registry.entries.find((candidate) => candidate.id === id);
   if (!entry) throw new Error(`Tweak store entry not found: ${id}`);
@@ -669,11 +699,11 @@ ipcMain.handle("codexpp:install-store-tweak", async (_e, id: string) => {
   return { installed: entry.id };
 });
 
-ipcMain.handle("codexpp:install-github-tweak", async (_e, id: string) => {
+privilegedHandle("codexpp:install-github-tweak", async (_e, id: string) => {
   return installGithubReleaseTweak(id);
 });
 
-ipcMain.handle("codexpp:prepare-tweak-store-submission", async (_e, repoInput: string) => {
+privilegedHandle("codexpp:prepare-tweak-store-submission", async (_e, repoInput: string) => {
   return prepareTweakStoreSubmission(repoInput);
 });
 
@@ -741,7 +771,7 @@ ipcMain.on("codexpp:preload-log", (_e, level: "info" | "warn" | "error", msg: st
 // Sandbox-safe filesystem ops for renderer-scope tweaks. Each tweak gets
 // a sandboxed dir under userRoot/tweak-data/<id>. Renderer side calls these
 // over IPC instead of using Node fs directly.
-ipcMain.handle("codexpp:tweak-fs", (_e, op: string, id: string, p: string, c?: string) => {
+privilegedHandle("codexpp:tweak-fs", (_e, op: string, id: string, p: string, c?: string) => {
   if (!/^[a-zA-Z0-9._-]+$/.test(id)) throw new Error("bad tweak id");
   const dir = join(userRoot!, "tweak-data", id);
   mkdirSync(dir, { recursive: true });
@@ -768,14 +798,13 @@ ipcMain.handle("codexpp:codex-runtime-info", () => currentRuntimeInfo());
 ipcMain.handle("codexpp:codex-runtime-capabilities", () => currentRuntimeCapabilities());
 ipcMain.handle("codexpp:codex-cdp-status", () => getCdpStatus());
 ipcMain.handle("codexpp:codex-cdp-targets", () => listCdpTargets());
-ipcMain.handle("codexpp:codex-window-create", (_e, opts: CodexCreateWindowOptions) => {
+privilegedHandle("codexpp:codex-window-create", (_e, opts: CodexCreateWindowOptions) => {
   return createCodexWindow(opts);
 });
 ipcMain.handle("codexpp:codex-window-primary", () => getPrimaryCodexWindowRef());
 ipcMain.handle("codexpp:codex-window-focus", (_e, windowId: number) => focusCodexWindow(windowId));
 ipcMain.handle("codexpp:codex-window-show", (_e, windowId: number) => showCodexWindow(windowId));
-ipcMain.handle(
-  "codexpp:codex-view-create",
+privilegedHandle("codexpp:codex-view-create",
   async (_e, tweakId: string, options: CodexViewCreateOptions) => {
     const tweak = assertTweakViewPermissionForId(tweakId);
     const ref = await createOwlView({ id: tweak.manifest.id, dir: tweak.dir }, options);
@@ -786,8 +815,7 @@ ipcMain.handle(
     };
   },
 );
-ipcMain.handle(
-  "codexpp:codex-view-call",
+privilegedHandle("codexpp:codex-view-call",
   (_e, tweakId: string, viewId: string, method: string, arg?: unknown, arg2?: unknown) => {
     assertTweakViewPermissionForId(tweakId);
     return callOwlView(tweakId, viewId, method, arg, arg2);
@@ -797,21 +825,19 @@ ipcMain.handle("codexpp:codex-view-dispose-tweak", (_e, tweakId: string) => {
   assertTweakId(tweakId);
   disposeOwlViewsForTweak(tweakId);
 });
-ipcMain.handle(
-  "codexpp:native-load-module",
+privilegedHandle("codexpp:native-load-module",
   (_e, tweakId: string, options: NativeModuleLoadOptions) => {
     const ref = nativeBridge.loadModule(tweakContext(tweakId, "native-module"), options);
     return { id: ref.id, kind: ref.kind };
   },
 );
-ipcMain.handle(
-  "codexpp:native-module-request",
+privilegedHandle("codexpp:native-module-request",
   (_e, tweakId: string, moduleId: string, method: string, payload?: unknown, timeoutMs?: number) => {
     assertTweakPermissionForId(tweakId, "native-module");
     return nativeBridge.requestModule(tweakId, moduleId, method, payload, timeoutMs);
   },
 );
-ipcMain.handle("codexpp:native-module-dispose", (_e, tweakId: string, moduleId: string) => {
+privilegedHandle("codexpp:native-module-dispose", (_e, tweakId: string, moduleId: string) => {
   assertTweakPermissionForId(tweakId, "native-module");
   return nativeBridge.disposeModule(tweakId, moduleId);
 });
@@ -819,43 +845,38 @@ ipcMain.handle("codexpp:native-dispose-tweak", (_e, tweakId: string) => {
   assertTweakId(tweakId);
   nativeBridge.disposeTweak(tweakId);
 });
-ipcMain.handle(
-  "codexpp:native-create-panel",
+privilegedHandle("codexpp:native-create-panel",
   async (_e, tweakId: string, options: NativePanelCreateOptions) => {
     const ref = await nativeBridge.createPanel(tweakContext(tweakId, "native-view"), options);
     return { id: ref.id, windowId: ref.windowId };
   },
 );
-ipcMain.handle(
-  "codexpp:native-attach-view",
+privilegedHandle("codexpp:native-attach-view",
   async (_e, tweakId: string, options: NativeViewAttachOptions) => {
     const ref = await nativeBridge.attachView(tweakContext(tweakId, "native-view"), options);
     return { id: ref.id };
   },
 );
-ipcMain.handle(
-  "codexpp:native-instance-call",
+privilegedHandle("codexpp:native-instance-call",
   async (_e, tweakId: string, kind: "panel" | "view", instanceId: string, method: string, arg?: unknown) => {
     assertTweakPermissionForId(tweakId, "native-view");
     return nativeBridge.callInstance(tweakId, kind, instanceId, method, arg);
   },
 );
-ipcMain.handle(
-  "codexpp:native-launch-helper",
+privilegedHandle("codexpp:native-launch-helper",
   (_e, tweakId: string, options: NativeHelperLaunchOptions) => {
     const ref = nativeBridge.launchHelper(tweakContext(tweakId, "native-helper"), options);
     return { id: ref.id, pid: ref.pid };
   },
 );
-ipcMain.handle(
-  "codexpp:native-helper-call",
+privilegedHandle("codexpp:native-helper-call",
   (_e, tweakId: string, helperId: string, method: string, payload?: unknown, timeoutMs?: number) => {
     assertTweakPermissionForId(tweakId, "native-helper");
     return nativeBridge.callHelper(tweakId, helperId, method, payload, timeoutMs);
   },
 );
 
-ipcMain.handle("codexpp:reveal", (_e, p: string) => {
+privilegedHandle("codexpp:reveal", (_e, p: string) => {
   shell.openPath(p).catch(() => {});
 });
 
@@ -867,7 +888,7 @@ ipcMain.handle("codexpp:open-external", (_e, url: string) => {
   shell.openExternal(parsed.toString()).catch(() => {});
 });
 
-ipcMain.handle("codexpp:copy-text", (_e, text: string) => {
+privilegedHandle("codexpp:copy-text", (_e, text: string) => {
   clipboard.writeText(String(text));
   return true;
 });
@@ -1089,20 +1110,45 @@ async function ensureTweakUpdateCheck(t: DiscoveredTweak, force = false): Promis
     return;
   }
 
-  const next = await fetchLatestRelease(repo, t.manifest.version);
-  const latestVersion = next.latestTag ? normalizeVersion(next.latestTag) : null;
-  const check: TweakUpdateCheck = {
-    checkedAt: new Date().toISOString(),
-    repo,
-    currentVersion: t.manifest.version,
-    latestVersion,
-    latestTag: next.latestTag,
-    releaseUrl: next.releaseUrl,
-    updateAvailable: latestVersion
-      ? compareVersions(latestVersion, normalizeVersion(t.manifest.version)) > 0
-      : false,
-    ...(next.error ? { error: next.error } : {}),
-  };
+  let check: TweakUpdateCheck;
+  try {
+    const { registry } = await fetchTweakStoreRegistry();
+    const entry = registry.entries.find((candidate) => candidate.id === id);
+    if (!entry) {
+      check = {
+        checkedAt: new Date().toISOString(),
+        repo,
+        currentVersion: t.manifest.version,
+        latestVersion: null,
+        latestTag: null,
+        releaseUrl: null,
+        updateAvailable: false,
+      };
+    } else {
+      const latestVersion = normalizeVersion(entry.manifest.version);
+      check = {
+        checkedAt: new Date().toISOString(),
+        repo,
+        currentVersion: t.manifest.version,
+        latestVersion,
+        latestTag: null,
+        releaseUrl: entry.releaseUrl ?? `https://github.com/${repo}/releases`,
+        updateAvailable: compareVersions(latestVersion, normalizeVersion(t.manifest.version)) > 0,
+        pinnedSha: entry.approvedCommitSha,
+      };
+    }
+  } catch (e) {
+    check = {
+      checkedAt: new Date().toISOString(),
+      repo,
+      currentVersion: t.manifest.version,
+      latestVersion: null,
+      latestTag: null,
+      releaseUrl: null,
+      updateAvailable: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
   state.tweakUpdateChecks ??= {};
   state.tweakUpdateChecks[id] = check;
   writeState(state);
@@ -1141,39 +1187,13 @@ async function installGithubReleaseTweak(id: string): Promise<{
     );
   }
 
-  const release = await fetchLatestRelease(repo, tweak.manifest.version);
-  if (!release.latestTag) {
-    throw new Error(release.error ?? `No GitHub release found for ${repo}`);
-  }
-  const latestVersion = normalizeVersion(release.latestTag);
-  if (compareVersions(latestVersion, normalizeVersion(tweak.manifest.version)) <= 0) {
-    throw new Error(`${tweak.manifest.name} ${tweak.manifest.version} is already up to date`);
-  }
-
-  const commit = await fetchGithubJson<{ sha?: string }>(
-    `https://api.github.com/repos/${repo}/commits/${encodeURIComponent(release.latestTag)}`,
-  );
-  const commitSha = typeof commit.sha === "string" ? commit.sha : "";
-  if (!isFullCommitSha(commitSha)) {
-    throw new Error(`Could not resolve a full commit SHA for ${repo}@${release.latestTag}`);
-  }
-
-  const entry: TweakStoreEntry = {
-    ...storeEntry,
-    approvedCommitSha: commitSha,
-    releaseUrl: release.releaseUrl ?? storeEntry.releaseUrl,
-    manifest: {
-      ...storeEntry.manifest,
-      version: latestVersion,
-    },
-  };
-  assertStoreEntryPlatformCompatible(entry);
-  assertStoreEntryRuntimeCompatible(entry);
-  await installStoreTweak(entry);
-  reloadTweaks("github-release-install", tweakLifecycleDeps);
+  assertStoreEntryPlatformCompatible(storeEntry);
+  assertStoreEntryRuntimeCompatible(storeEntry);
+  await installStoreTweak(storeEntry);
+  reloadTweaks("store-pin-install", tweakLifecycleDeps);
   const installed = tweakState.discovered.find((item) => item.manifest.id === id) ?? tweak;
   await ensureTweakUpdateCheck(installed, true);
-  return { installed: id, version: latestVersion, commitSha };
+  return { installed: id, version: storeEntry.manifest.version, commitSha: storeEntry.approvedCommitSha };
 }
 
 async function fetchLatestRelease(
@@ -1311,8 +1331,24 @@ function formatStorePlatforms(platforms: TweakStorePlatform[] | null): string {
   }).join(", ");
 }
 
+function readBundledStoreRegistry(): TweakStoreRegistry | null {
+  const bundled = join(runtimeDir!, "store-index.json");
+  if (!existsSync(bundled)) return null;
+  try {
+    const body = readFileSync(bundled);
+    if (!process.env.CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE) {
+      assertStoreIndexMatchesPin(body);
+    }
+    return normalizeStoreRegistry(JSON.parse(body.toString("utf8")));
+  } catch (e) {
+    log("warn", "bundled store index rejected:", String((e as Error).message));
+    return null;
+  }
+}
+
 async function fetchTweakStoreRegistry(): Promise<TweakStoreFetchResult> {
   const fetchedAt = new Date().toISOString();
+  const allowOverride = process.env.CODEX_PLUSPLUS_ALLOW_STORE_INDEX_OVERRIDE === "1";
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -1325,8 +1361,10 @@ async function fetchTweakStoreRegistry(): Promise<TweakStoreFetchResult> {
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`store returned ${res.status}`);
+      const body = Buffer.from(await res.arrayBuffer());
+      if (!allowOverride) assertStoreIndexMatchesPin(body);
       return {
-        registry: normalizeStoreRegistry(await res.json()),
+        registry: normalizeStoreRegistry(JSON.parse(body.toString("utf8"))),
         fetchedAt,
       };
     } finally {
@@ -1334,6 +1372,11 @@ async function fetchTweakStoreRegistry(): Promise<TweakStoreFetchResult> {
     }
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
+    const bundled = readBundledStoreRegistry();
+    if (bundled) {
+      log("warn", "using bundled store index pin:", error.message);
+      return { registry: bundled, fetchedAt };
+    }
     log("warn", "failed to fetch tweak store registry:", error.message);
     throw error;
   }
@@ -1920,13 +1963,17 @@ async function createOwlView(
   const hostId = opts.hostId || "local";
   const view = new BrowserView({
     webPreferences: {
-      preload: opts.registerWithCodex === false ? undefined : windowManager?.options?.preloadPath,
+      preload: opts.registerWithCodex === false
+        ? (existsSync(GUEST_PRELOAD_PATH) ? GUEST_PRELOAD_PATH : undefined)
+        : windowManager?.options?.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       spellcheck: false,
       devTools: windowManager?.options?.allowDevtools,
     },
   });
+  markUntrustedWebContents(view.webContents);
 
   if (opts.backgroundColor) {
     callObjectMethod(view, "setBackgroundColor", [opts.backgroundColor]);

@@ -5,6 +5,7 @@ import { locateCodex } from "../platform.js";
 import { readHeaderHash } from "../asar.js";
 import { verifySignature } from "../codesign.js";
 import { existsSync, accessSync, constants } from "node:fs";
+import { integrityWriterReport } from "../integrity.js";
 
 interface Check {
   name: string;
@@ -77,6 +78,13 @@ export async function doctor(): Promise<void> {
       detail: dir,
     });
   }
+
+  const integrity = integrityWriterReport(codex.platform);
+  checks.push({
+    name: "asar integrity writer",
+    ok: integrity.ok,
+    detail: integrity.detail,
+  });
 
   print(checks);
 }

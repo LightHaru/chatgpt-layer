@@ -5,6 +5,7 @@
  * stay external because they're provided by the host.
  */
 import { build } from "esbuild";
+import { cpSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,4 +42,23 @@ await build({
   // handles missing fsevents internally — this is just future-proofing.)
 });
 
-console.log("[bundle] preload + main bundled");
+await build({
+  entryPoints: [resolve(root, "src/preload/guest.ts")],
+  bundle: true,
+  outfile: resolve(root, "dist/guest-preload.js"),
+  platform: "browser",
+  target: "es2022",
+  format: "cjs",
+  external: ["electron"],
+  sourcemap: "inline",
+  minify: false,
+  logLevel: "info",
+});
+
+const storeIndex = resolve(root, "../../store/index.json");
+if (existsSync(storeIndex)) {
+  cpSync(storeIndex, resolve(root, "dist/store-index.json"));
+  console.log("[bundle] store-index.json copied");
+}
+
+console.log("[bundle] preload + guest-preload + main bundled");

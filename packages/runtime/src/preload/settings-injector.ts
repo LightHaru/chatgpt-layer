@@ -31,6 +31,7 @@ import type {
 } from "@codex-plusplus/sdk";
 import {
   buildTweakPublishIssueUrl,
+  listedPinLabel,
   type TweakStoreEntry,
   type TweakStorePublishSubmission,
 } from "../tweak-store";
@@ -1105,10 +1106,10 @@ function autoUpdateRow(config: CodexPlusPlusConfig): HTMLElement {
   left.className = "flex min-w-0 flex-col gap-1";
   const title = document.createElement("div");
   title.className = "min-w-0 text-sm text-token-text-primary";
-  title.textContent = "Automatically refresh Codex++";
+  title.textContent = "Automatically refresh ChatGPT Layer";
   const desc = document.createElement("div");
   desc.className = "text-token-text-secondary min-w-0 text-sm";
-  desc.textContent = `Installed version v${config.version}. The watcher checks hourly and can refresh the Codex++ runtime automatically.`;
+  desc.textContent = `Installed version v${config.version}. Off by default. The watcher repairs the ChatGPT patch; Layer self-update only runs if you opt in.`;
   left.appendChild(title);
   left.appendChild(desc);
   row.appendChild(left);
@@ -1147,14 +1148,11 @@ function updateChannelRow(config: CodexPlusPlusConfig): HTMLElement {
   if (config.updateChannel === "custom") {
     action?.appendChild(
       compactButton("Edit", () => {
-        const repo = window.prompt("GitHub repo", config.updateRepo || "b-nnett/codex-plusplus");
-        if (repo === null) return;
-        const ref = window.prompt("Git ref", config.updateRef || "main");
+        const ref = window.prompt("Release tag or commit SHA", config.updateRef || "");
         if (ref === null) return;
         void ipcRenderer
           .invoke("codexpp:set-update-config", {
             updateChannel: "custom",
-            updateRepo: repo,
             updateRef: ref,
           })
           .then(() => refreshConfigCard(row))
@@ -1738,7 +1736,7 @@ function tweakStoreCard(entry: TweakStoreEntryView): HTMLElement {
   title.className = "min-w-0 text-lg font-semibold leading-7 text-token-foreground";
   title.textContent = entry.manifest.name;
   titleRow.appendChild(title);
-  titleRow.appendChild(verifiedSafeBadge());
+  titleRow.appendChild(listedPinBadge(entry));
   stack.appendChild(titleRow);
 
   if (entry.manifest.description) {
@@ -2162,17 +2160,24 @@ function refreshIconSvg(): string {
   );
 }
 
-function verifiedSafeBadge(): HTMLElement {
+function listedPinBadge(entry: TweakStoreEntryView): HTMLElement {
   const badge = document.createElement("span");
   badge.className =
     "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-token-border/30 bg-transparent px-2 text-xs font-medium text-token-description-foreground";
+  const label = listedPinLabel(entry.approvedCommitSha);
+  badge.title = `Store-listed. Installs pinned commit ${entry.approvedCommitSha} only.`;
   badge.innerHTML =
     `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" class="text-blue-500" aria-hidden="true">` +
     `<path d="M7 1.75 11.25 3.4v3.2c0 2.6-1.65 4.25-4.25 5.4-2.6-1.15-4.25-2.8-4.25-5.4V3.4L7 1.75Z" stroke="currentColor" stroke-width="1.15" stroke-linejoin="round"/>` +
-    `<path d="M4.85 7.05 6.3 8.45l2.85-3.05" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>` +
     `</svg>` +
-    `<span>Verified as safe</span>`;
+    `<span>${label}</span>`;
   return badge;
+}
+
+function verifiedSafeBadge(): HTMLElement {
+  return listedPinBadge({
+    approvedCommitSha: "0000000000000000000000000000000000000000",
+  } as TweakStoreEntryView);
 }
 
 function tweakStoreVersionBadge(entry: TweakStoreEntryView, installedOverride?: string): HTMLElement {

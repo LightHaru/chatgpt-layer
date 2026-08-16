@@ -69,6 +69,21 @@ function safeStringify(v: unknown): string {
 
 fileLog("preload entry", { url: location.href });
 
+function isPrivilegedFrame(): boolean {
+  try {
+    return ipcRenderer.sendSync("codexpp:privileged-frame") === true;
+  } catch {
+    return false;
+  }
+}
+
+if (!isPrivilegedFrame()) {
+  fileLog("guest frame; skipping privileged boot");
+} else {
+  startPrivilegedPreload();
+}
+
+function startPrivilegedPreload(): void {
 try {
   installBrowserUiHostBridge();
   fileLog("browser UI host bridge installed");
@@ -231,4 +246,5 @@ function unsubscribeBrowserUiWorkerMessages(
   workerListeners.delete(workerId);
   ipcRenderer.removeListener(desktopWorkerForViewChannel(workerId), listener);
   return true;
+}
 }
