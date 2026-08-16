@@ -113,10 +113,12 @@ export async function install(opts: Opts = {}): Promise<void> {
 
   const { headerHash: currentAsarHash } = readHeaderHash(codex.asarPath);
   const prior = readState(paths.stateFile);
-  const originalAsarHash = alreadyPatched
-    ? prior?.originalAsarHash
-      ?? (existsSync(backupAsar) ? readHeaderHash(backupAsar).headerHash : currentAsarHash)
-    : currentAsarHash;
+  const originalAsarHash = resolveOriginalAsarHash({
+    alreadyPatched,
+    currentAsarHash,
+    prior,
+    backupAsar,
+  });
 
   // 2. Stage runtime + loader into the user dir.
   stageAssets(paths.runtime);
@@ -738,6 +740,25 @@ function createWindowsCodexShortcut(shortcutPath: string, targetPath: string): b
   } catch {
     return false;
   }
+}
+
+
+function resolveOriginalAsarHash(input: {
+  alreadyPatched: boolean;
+  currentAsarHash: string;
+  prior: ReturnType<typeof readState>;
+  backupAsar: string;
+}): string | null {
+  if (!input.alreadyPatched) return input.currentAsarHash;
+  const priorHash = input.prior?.originalAsarHash;
+  if (priorHash && priorHash !== input.currentAsarHash) return priorHash;
+  if (existsSync(input.backupAsar)) {
+    const backupHash = readHeaderHash(input.backupAsar).headerHash;
+    if (backupHash !== input.currentAsarHash && !hasCodexPlusPlusAsarMarker(input.backupAsar)) {
+      return backupHash;
+    }
+  }
+  return null;
 }
 
 function preflightSystemTools(platform: string, resign: boolean, hasPlist: boolean): void {

@@ -154,6 +154,24 @@ test("partial F: patch already present on re-install is fail-safe", async () => 
   });
 });
 
+test("already patched with no state and no backup does not record a patched original hash", async () => {
+  await withIsolatedInstaller(async (h) => {
+    await install(h.installOpts);
+    rmSync(h.paths.stateFile, { force: true });
+    rmSync(backupAsarPath(h.paths), { force: true });
+    rmSync(join(h.paths.backup, "app.asar.unpacked"), { recursive: true, force: true });
+    rmSync(join(h.paths.backup, "Codex.app"), { recursive: true, force: true });
+    await install(h.installOpts);
+    const state = readState(h.paths.stateFile);
+    assert.ok(state);
+    assert.equal(state.originalAsarHash, null);
+    assert.notEqual(state.originalAsarHash, state.patchedAsarHash);
+    assert.equal(existsSync(backupAsarPath(h.paths)), false);
+    await assert.rejects(() => uninstall({ app: h.app.appRoot }), /backup|original|unknown|Refusing/i);
+    assert.equal(isPatchedAsar(h.app.asarPath), true);
+  });
+});
+
 test("malformed ASAR fails clearly and does not report success", async () => {
   await withIsolatedInstaller(async (h) => {
     writeFileSync(h.app.asarPath, "this is not an asar archive");

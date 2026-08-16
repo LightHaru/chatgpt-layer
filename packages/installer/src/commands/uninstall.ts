@@ -122,7 +122,12 @@ export function chooseRestorePlan(input: {
 
   if (!existsSync(input.partialAsarBackup)) {
     throw new Error(
-      `No backup found at ${input.partialAsarBackup}. Cannot safely uninstall a patched Codex.app.`,
+      `No original app.asar backup found at ${input.partialAsarBackup}. Cannot safely uninstall a patched Codex.app because the original package is unknown.`,
+    );
+  }
+  if (hasCodexPlusPlusAsarMarker(input.partialAsarBackup)) {
+    throw new Error(
+      `Backup at ${input.partialAsarBackup} is itself a ChatGPT Layer patch. Refusing to restore it as the original app.`,
     );
   }
 

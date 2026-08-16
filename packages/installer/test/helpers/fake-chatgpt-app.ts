@@ -205,7 +205,7 @@ export async function createFakeChatGptApp(
     writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     chmodSync(executable, 0o755);
     writeFileSync(join(frameworkDir, "Electron Framework"), "fake-electron-framework\n");
-    const unrelatedAppFile = join(appRoot, "unrelated-keep.txt");
+    const unrelatedAppFile = join(resourcesDir, "unrelated-keep.txt");
     writeFileSync(unrelatedAppFile, "app-unrelated\n");
     return {
       appRoot,
@@ -244,6 +244,9 @@ const PARENT_OVERRIDE_KEYS = [
   "CODEX_PLUSPLUS_HOME",
   "CODEX_PLUSPLUS_DISABLE_WATCHER",
   "CODEX_PLUSPLUS_DISABLE_PATH_SHIMS",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
 ] as const;
 
 function isolatedChildEnv(testRoot: string): NodeJS.ProcessEnv {
@@ -274,7 +277,7 @@ function isolatedChildEnv(testRoot: string): NodeJS.ProcessEnv {
     CODEX_PLUSPLUS_HOME: userData,
     CODEX_PLUSPLUS_DISABLE_WATCHER: "1",
     CODEX_PLUSPLUS_DISABLE_PATH_SHIMS: "1",
-    PATH: [binDir, nodeDir].join(pathSep),
+    PATH: [binDir, nodeDir, "/usr/bin", "/bin", "/usr/sbin"].join(pathSep),
     ProgramFiles: join(testRoot, "ProgramFiles"),
     "ProgramFiles(x86)": join(testRoot, "ProgramFilesX86"),
     SUDO_USER: "",
@@ -283,12 +286,15 @@ function isolatedChildEnv(testRoot: string): NodeJS.ProcessEnv {
   };
 }
 
-function applyParentOverrides(userData: string): () => void {
+function applyParentOverrides(userData: string, tmpDir: string): () => void {
   const previous: Record<string, string | undefined> = {};
   for (const key of PARENT_OVERRIDE_KEYS) previous[key] = process.env[key];
   process.env.CODEX_PLUSPLUS_HOME = userData;
   process.env.CODEX_PLUSPLUS_DISABLE_WATCHER = "1";
   process.env.CODEX_PLUSPLUS_DISABLE_PATH_SHIMS = "1";
+  process.env.TMPDIR = tmpDir;
+  process.env.TMP = tmpDir;
+  process.env.TEMP = tmpDir;
   return () => {
     for (const key of PARENT_OVERRIDE_KEYS) {
       if (previous[key] === undefined) delete process.env[key];
@@ -300,7 +306,7 @@ function applyParentOverrides(userData: string): () => void {
 export async function createInstallerHarness(): Promise<InstallerHarness> {
   const testRoot = mkdtempSync(join(tmpdir(), "cgl-installer-it-"));
   const env = isolatedChildEnv(testRoot);
-  const restoreEnv = applyParentOverrides(env.CODEX_PLUSPLUS_HOME!);
+  const restoreEnv = applyParentOverrides(env.CODEX_PLUSPLUS_HOME!, env.TMPDIR!);
   mkdirSync(join(testRoot, "app"), { recursive: true });
   const app = await createFakeChatGptApp(join(testRoot, "app"));
   const paths = userPaths();
@@ -337,11 +343,9 @@ export async function withIsolatedInstaller<T>(
 
 export function assertPathSafety(h: InstallerHarness): void {
   const roots = [h.testRoot].map((p) => resolve(p));
-  const osTmp = resolve(tmpdir());
   function allowed(path: string): boolean {
     const resolved = resolve(path);
     if (roots.some((root) => resolved === root || resolved.startsWith(root + sep))) return true;
-    if (resolved === osTmp || resolved.startsWith(osTmp + sep)) return true;
     return false;
   }
   if (!allowed(h.userData) || !allowed(h.app.appRoot)) {
@@ -531,7 +535,6 @@ export function walkFiles(root: string): string[] {
 
 export function assertAllWritesUnder(h: InstallerHarness, extraAllowed: string[] = []): void {
   const allowed = [h.testRoot, ...extraAllowed].map((p) => resolve(p));
-  const osTmp = resolve(tmpdir());
   for (const file of [...walkFiles(h.userData), ...walkFiles(h.app.appRoot)]) {
     const resolved = resolve(file);
     const ok =

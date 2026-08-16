@@ -11,7 +11,7 @@ export interface InstallerState {
   /** Absolute path to the patched Codex install. */
   appRoot: string;
   /** Hash of the original asar header (pre-patch). */
-  originalAsarHash: string;
+  originalAsarHash: string | null;
   /** Hash of the patched asar header (what's currently on disk if intact). */
   patchedAsarHash: string;
   /** Codex version string we patched against (CFBundleShortVersionString). */

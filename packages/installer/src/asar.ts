@@ -73,7 +73,7 @@ export async function patchAsar(
       throw annotatePermError(e, asarPath);
     }
     try {
-      renameSync(stagingPath, asarPath);
+      await replaceAsarAtomically(stagingPath, asarPath);
     } catch (e) {
       try { unlinkSync(stagingPath); } catch { /* best effort */ }
       throw annotatePermError(e, asarPath);
@@ -90,6 +90,32 @@ export async function patchAsar(
       // Best-effort: a leftover temp dir must not fail a successful patch.
     }
   }
+}
+
+
+async function replaceAsarAtomically(stagingPath: string, asarPath: string): Promise<void> {
+  asar.uncache(asarPath);
+  asar.uncache(stagingPath);
+  const attempts = 10;
+  const delayMs = 75;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      if (process.platform === "win32") {
+        try { chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
+      }
+      renameSync(stagingPath, asarPath);
+      return;
+    } catch (e) {
+      lastError = e;
+      if (!isTransientCleanupError(e) || attempt === attempts) throw e;
+      if (process.platform === "win32") {
+        try { unlinkSync(asarPath); } catch { /* dest still locked; retry */ }
+      }
+      await delay(delayMs);
+    }
+  }
+  if (lastError) throw lastError;
 }
 
 export async function cleanupTempTree(path: string): Promise<void> {
