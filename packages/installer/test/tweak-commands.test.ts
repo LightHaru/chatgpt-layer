@@ -440,20 +440,19 @@ test("watcher self-update checks stay hourly while repair can run more often", (
   });
 });
 
-test("watcher runs self-update and app repair as separate steps", () => {
+test("watcher repairs the app patch and does not self-update Layer", () => {
   const script = watcherShellScript();
 
-  assert.match(script, /update --watcher --quiet --no-repair/);
   assert.match(script, /repair --watcher --quiet/);
-  assert.match(script, /update[\s\S]+\|\| true;[\s\S]+repair/);
+  assert.doesNotMatch(script, /update --watcher/);
 });
 
 test("launchd watcher script clears stale log entries before each run", () => {
   const script = watcherShellScript("/tmp/codex plusplus/watch'er.log");
 
   assert.match(script, /^: > '\/tmp\/codex plusplus\/watch'\\''er\.log'; sleep 3; /);
-  assert.match(script, /update --watcher --quiet --no-repair/);
   assert.match(script, /repair --watcher --quiet/);
+  assert.doesNotMatch(script, /update --watcher/);
 });
 
 test("self-update marks the installed CLI executable on unix", () => {
