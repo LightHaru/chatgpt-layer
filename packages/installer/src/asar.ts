@@ -459,7 +459,10 @@ export function backupOnce(from: string, to: string): void {
 
 /** Read a file inside the asar without extracting the whole thing. */
 export function readFileInAsar(asarPath: string, relPath: string): Buffer {
-  return asar.extractFile(asarPath, relPath) as Buffer;
+  uncacheAsar(asarPath);
+  const out = asar.extractFile(asarPath, relPath) as Buffer;
+  uncacheAsar(asarPath);
+  return out;
 }
 
 /**

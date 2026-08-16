@@ -1,6 +1,6 @@
 "use strict";
 
-// packages/runtime/src/preload/guest.ts
+// src/preload/guest.ts
 var import_electron = require("electron");
 try {
   import_electron.ipcRenderer.send("codexpp:preload-log", "info", `[codex-plusplus guest-preload] ${location.href}`);

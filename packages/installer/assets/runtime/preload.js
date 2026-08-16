@@ -1,9 +1,9 @@
 "use strict";
 
-// packages/runtime/src/preload/index.ts
+// src/preload/index.ts
 var import_electron4 = require("electron");
 
-// packages/runtime/src/preload/react-hook.ts
+// src/preload/react-hook.ts
 function installReactHook() {
   if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return;
   const renderers = /* @__PURE__ */ new Map();
@@ -65,10 +65,10 @@ function fiberForNode(node) {
   return null;
 }
 
-// packages/runtime/src/preload/settings-injector.ts
+// src/preload/settings-injector.ts
 var import_electron = require("electron");
 
-// packages/runtime/src/tweak-store.ts
+// src/tweak-store.ts
 var PINNED_TWEAK_STORE_INDEX_COMMIT = "7a0e95b161de5480261f17bbf84004d9be90dc6e";
 var DEFAULT_TWEAK_STORE_INDEX_URL = `https://raw.githubusercontent.com/LightHaru/chatgpt-layer/${PINNED_TWEAK_STORE_INDEX_COMMIT}/store/index.json`;
 var TWEAK_STORE_REVIEW_ISSUE_URL = "https://github.com/LightHaru/chatgpt-layer/issues/new";
@@ -138,7 +138,7 @@ function listedPinLabel(sha) {
   return `Listed \xB7 pinned ${shortCommitSha(sha)}`;
 }
 
-// packages/runtime/src/preload/settings-injector.ts
+// src/preload/settings-injector.ts
 var CODEX_PLUSPLUS_RELEASES_URL = "https://github.com/LightHaru/chatgpt-layer/releases";
 var state = {
   sections: /* @__PURE__ */ new Map(),
@@ -2598,10 +2598,10 @@ function tweaksPath() {
   return window.__codexpp_tweaks_dir__ ?? "<user dir>/tweaks";
 }
 
-// packages/runtime/src/preload/tweak-host.ts
+// src/preload/tweak-host.ts
 var import_electron2 = require("electron");
 
-// packages/runtime/src/tweak-permissions.ts
+// src/tweak-permissions.ts
 var TWEAK_PERMISSION_ALIASES = {
   "codex.windows": "codex-windows",
   "codex.views": "codex-views"
@@ -2738,7 +2738,7 @@ function createBoundTweakIpc(ownerId, bridge) {
   };
 }
 
-// packages/runtime/src/preload/tweak-host.ts
+// src/preload/tweak-host.ts
 var loaded = /* @__PURE__ */ new Map();
 var cachedPaths = null;
 async function startTweakHost() {
@@ -3075,7 +3075,7 @@ function rendererStorage(id) {
   };
 }
 
-// packages/runtime/src/preload/manager.ts
+// src/preload/manager.ts
 var import_electron3 = require("electron");
 async function mountManager() {
   const tweaks = await import_electron3.ipcRenderer.invoke("codexpp:list-tweaks");
@@ -3148,7 +3148,7 @@ function escape(s) {
   );
 }
 
-// packages/runtime/src/preload/index.ts
+// src/preload/index.ts
 var BROWSER_UI_CONNECT_PORT = "codexpp:browser-ui-connect-app-host";
 var BROWSER_UI_BRIDGE_REQUEST = "codexpp:browser-ui-bridge-request";
 var BROWSER_UI_BRIDGE_RESPONSE = "codexpp:browser-ui-bridge-response";
