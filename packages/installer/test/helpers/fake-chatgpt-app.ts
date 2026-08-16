@@ -7,9 +7,11 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, platform, tmpdir } from "node:os";
@@ -158,8 +160,12 @@ export async function writeSyntheticAsar(
       writeFileSync(target, body);
     }
     mkdirSync(dirname(dest), { recursive: true });
-    await asar.createPackageWithOptions(work, dest, { globOptions: { dot: true } });
+    const packed = `${dest}.packed`;
+    await asar.createPackageWithOptions(work, packed, { globOptions: { dot: true } });
+    uncacheAsar(packed);
     uncacheAsar(dest);
+    try { unlinkSync(dest); } catch { /* dest may not exist */ }
+    renameSync(packed, dest);
   } finally {
     await cleanupTempTree(work);
   }

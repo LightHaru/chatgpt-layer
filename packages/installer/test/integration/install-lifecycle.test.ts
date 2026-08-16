@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { patchAsar } from "../../src/asar";
+import { patchAsar, uncacheAsar } from "../../src/asar";
 import { install, stageAssets } from "../../src/commands/install";
 import { repair } from "../../src/commands/repair";
 import { status } from "../../src/commands/status";
@@ -225,12 +225,14 @@ test("CLI smoke: built installer status/doctor/install/repair/uninstall stay on 
     const cli = builtCliPath();
     assert.equal(existsSync(cli), true, "packages/installer/dist/cli.js missing; run workspace build first");
 
-    const run = (args: string[]) =>
-      spawnSync(process.execPath, [cli, ...args], {
+    const run = (args: string[]) => {
+      try { uncacheAsar(h.app.asarPath); } catch { /* parent must not keep the asar mapped */ }
+      return spawnSync(process.execPath, [cli, ...args], {
         env: h.env,
         encoding: "utf8",
         timeout: 60_000,
       });
+    };
 
     const notInstalled = run(["status"]);
     assert.equal(notInstalled.status, 0, notInstalled.stderr);

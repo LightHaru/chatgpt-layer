@@ -55,6 +55,7 @@ export async function patchAsar(
 
   try {
     asar.extractAll(asarPath, extractDir);
+    asar.uncache(asarPath);
     await mutate(extractDir);
 
     await asar.createPackageWithOptions(extractDir, outAsar, {
@@ -94,23 +95,31 @@ export async function patchAsar(
 
 
 async function replaceAsarAtomically(stagingPath: string, asarPath: string): Promise<void> {
-  asar.uncache(asarPath);
-  asar.uncache(stagingPath);
-  const attempts = 10;
-  const delayMs = 75;
+  const win = process.platform === "win32";
+  const attempts = win ? 40 : 8;
+  const delayMs = win ? 150 : 50;
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    asar.uncache(asarPath);
+    asar.uncache(stagingPath);
     try {
-      if (process.platform === "win32") {
+      if (win) {
         try { chmodSync(asarPath, 0o666); } catch { /* dest may not exist */ }
+        try { unlinkSync(asarPath); } catch { /* dest still locked */ }
       }
       renameSync(stagingPath, asarPath);
+      asar.uncache(asarPath);
       return;
     } catch (e) {
       lastError = e;
       if (!isTransientCleanupError(e) || attempt === attempts) throw e;
-      if (process.platform === "win32") {
-        try { unlinkSync(asarPath); } catch { /* dest still locked; retry */ }
+      if (win) {
+        try {
+          cpSync(stagingPath, asarPath);
+          try { unlinkSync(stagingPath); } catch { /* staging leftover is ok */ }
+          asar.uncache(asarPath);
+          return;
+        } catch { /* dest still locked; retry */ }
       }
       await delay(delayMs);
     }
