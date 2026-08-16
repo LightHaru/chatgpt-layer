@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  asarBufferHasReadablePackageJson,
   asarHasReadablePackageJson,
   cleanupTempTree,
   patchAsar,
@@ -63,14 +64,15 @@ test("asarHasReadablePackageJson accepts a packed asar with valid JSON", async (
   }
 });
 
-test("just-packed asar is readable from a copied unique path", async () => {
-  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-copy-probe-"));
+test("package.json validation uses raw asar bytes, not extractFile", async () => {
+  const root = mkdtempSync(join(tmpdir(), "codexpp-asar-bytes-"));
   try {
     const archive = await packFixture(root, { name: "ok", main: "main.js" });
-    const probe = join(root, "probe-unique.asar");
-    writeFileSync(probe, readFileSync(archive));
-    assert.notEqual(probe, archive);
-    assert.equal(asarHasReadablePackageJson(probe), true);
+    const bytes = readFileSync(archive);
+    assert.equal(asarBufferHasReadablePackageJson(bytes), true);
+    assert.equal(asarBufferHasReadablePackageJson(Buffer.alloc(0)), false);
+    assert.equal(asarBufferHasReadablePackageJson(Buffer.alloc(64)), false);
+    assert.equal(asarHasReadablePackageJson(archive), true);
   } finally {
     await cleanupTempTree(root);
   }

@@ -10,7 +10,7 @@ import asar from "@electron/asar";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 export interface AsarHeaderInfo {
@@ -48,17 +48,43 @@ export function readHeaderHash(asarPath: string): AsarHeaderInfo {
 }
 
 /**
- * True when package.json can be extracted from the asar, is non-empty, contains
- * no NUL bytes, and parses as JSON. Does not log file contents.
+ * True when package.json can be read from RAW asar file bytes: header JSON
+ * lists a non-empty package.json, and those payload bytes are non-empty,
+ * contain no NUL, and parse as JSON. Does not use extractFile/getRawHeader
+ * and does not log file contents.
  */
 export function asarHasReadablePackageJson(asarPath: string): boolean {
   try {
-    asar.uncache(asarPath);
-    const buf = asar.extractFile(asarPath, "package.json") as Buffer;
-    asar.uncache(asarPath);
-    if (!buf || buf.length === 0) return false;
-    if (buf.includes(0)) return false;
-    const raw = buf.toString("utf8").trim();
+    return asarBufferHasReadablePackageJson(readFileSync(asarPath));
+  } catch {
+    return false;
+  }
+}
+
+export function asarBufferHasReadablePackageJson(bytes: Buffer): boolean {
+  try {
+    if (!bytes || bytes.length === 0) return false;
+    if (bytes[0] === 0) return false;
+    if (bytes.length < 16) return false;
+    // Electron asar: 8-byte size pickle (uint32 payload size + uint32 header size).
+    const headerPickleSize = bytes.readUInt32LE(4);
+    if (headerPickleSize <= 4 || 8 + headerPickleSize > bytes.length) return false;
+    const headerPickle = bytes.subarray(8, 8 + headerPickleSize);
+    const jsonLength = headerPickle.readInt32LE(4);
+    if (jsonLength <= 0 || 8 + jsonLength > headerPickle.length) return false;
+    const headerJson = headerPickle.subarray(8, 8 + jsonLength).toString("utf8");
+    if (!headerJson || headerJson.includes("\0")) return false;
+    const header = JSON.parse(headerJson) as { files?: Record<string, unknown> };
+    const entry = findPackedPackageJson(header);
+    if (!entry || entry.size <= 0) return false;
+    const dataStart = 8 + headerPickleSize;
+    const start = dataStart + entry.offset;
+    const end = start + entry.size;
+    if (start < dataStart || end > bytes.length) return false;
+    const payload = bytes.subarray(start, end);
+    if (payload.length === 0) return false;
+    if (payload.includes(0)) return false;
+    const raw = payload.toString("utf8").trim();
     if (!raw) return false;
     JSON.parse(raw);
     return true;
@@ -67,26 +93,30 @@ export function asarHasReadablePackageJson(asarPath: string): boolean {
   }
 }
 
-/**
- * Validate asar bytes without extractFile on the just-written path.
- * @electron/asar caches Filesystem objects by path; createPackage output can
- * then look NUL/unreadable even when the file bytes are fine. Copy to a unique
- * inode/path, then validate that copy. Fail closed if the copy is unreadable.
- */
-function asarBytesHaveReadablePackageJson(asarPath: string, workDir: string): boolean {
-  const probe = join(workDir, `check-${process.hrtime.bigint().toString(16)}.asar`);
-  try {
-    asar.uncache(asarPath);
-    writeFileSync(probe, readFileSync(asarPath));
-    try { fsyncPath(probe); } catch { /* ignore */ }
-    uncacheAsar(probe);
-    return asarHasReadablePackageJson(probe);
-  } catch {
-    return false;
-  } finally {
-    asar.uncache(probe);
-    try { unlinkSync(probe); } catch { /* ignore */ }
+function findPackedPackageJson(node: unknown): { size: number; offset: number } | null {
+  if (!node || typeof node !== "object") return null;
+  const rec = node as { files?: Record<string, unknown> };
+  if (!rec.files) return null;
+  const direct = rec.files["package.json"];
+  const parsed = packedFileEntry(direct);
+  if (parsed) return parsed;
+  for (const child of Object.values(rec.files)) {
+    const found = findPackedPackageJson(child);
+    if (found) return found;
   }
+  return null;
+}
+
+function packedFileEntry(node: unknown): { size: number; offset: number } | null {
+  if (!node || typeof node !== "object") return null;
+  const rec = node as { files?: unknown; size?: unknown; offset?: unknown; unpacked?: unknown };
+  if (rec.files) return null;
+  if (rec.unpacked) return null;
+  const size = Number(rec.size);
+  const offset = Number(rec.offset ?? 0);
+  if (!Number.isFinite(size) || size <= 0) return null;
+  if (!Number.isFinite(offset) || offset < 0) return null;
+  return { size, offset };
 }
 
 function defaultReplaceFs(): AsarReplaceFs {
@@ -156,7 +186,7 @@ export async function patchAsar(
     });
     uncacheAsar(outAsar);
     try { fsyncPath(outAsar); } catch { /* ignore */ }
-    if (!asarBytesHaveReadablePackageJson(outAsar, work)) {
+    if (!asarHasReadablePackageJson(outAsar)) {
       throw new Error("packed asar is unreadable");
     }
 
@@ -173,7 +203,7 @@ export async function patchAsar(
       throw annotatePermError(e, asarPath);
     }
     uncacheAsar(stagingPath);
-    if (!asarBytesHaveReadablePackageJson(stagingPath, work)) {
+    if (!asarHasReadablePackageJson(stagingPath)) {
       try { unlinkSync(stagingPath); } catch { /* dest was not touched */ }
       throw new Error("staged asar is unreadable");
     }
@@ -186,7 +216,7 @@ export async function patchAsar(
     // in place must drop that cache or later extractFile/extractAll reads
     // the old header against the new bytes.
     uncacheAsar(asarPath);
-    if (!asarBytesHaveReadablePackageJson(asarPath, work)) {
+    if (!asarHasReadablePackageJson(asarPath)) {
       throw new Error("replaced asar is unreadable");
     }
     uncacheAsar(asarPath);
@@ -236,7 +266,7 @@ export async function replaceAsarAtomically(
         fs.renameSync(stagingPath, asarPath);
       }
       uncacheAsar(asarPath);
-      if (!asarBytesHaveReadablePackageJson(asarPath, dirname(asarPath))) {
+      if (!asarHasReadablePackageJson(asarPath)) {
         throw new Error("replaced asar is unreadable");
       }
       if (win) {
