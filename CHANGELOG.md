@@ -4,6 +4,33 @@ All notable changes to ChatGPT Layer are documented here. The project is based o
 
 This project uses semver for the installer, runtime, SDK, and published CLI package. Tweak authors should also use semver release tags so the manager can compare installed and available versions.
 
+## 1.1.4
+
+Release notes: [docs/releases/1.1.4.md](docs/releases/1.1.4.md)
+
+Patch release: bugfixes, docs, refactor, and installer/formula retarget since 1.1.3.
+
+### Added
+
+- Capability-driven runtime compatibility layer for ChatGPT/Owl probing (PR #6, `6a92ebf`).
+
+### Changed
+
+- Homebrew formula retargets to `LightHaru/chatgpt-layer` (`037df7c`).
+- Custom update-repo fallback in settings-injector defaults to `LightHaru/chatgpt-layer` (`44209c3`).
+- Installer README URLs point at `LightHaru/chatgpt-layer` (`0d0f558`).
+- Installer one-liners pin downloaded source to tag `v1.1.4` (`506dda0`, retargeted for this release).
+- Split runtime `main.ts` into focused modules without changing behavior (PR #4, `878383a`).
+- Watcher-health treats Layer self-update as opt-in (default off) and renames the diagnostic label (PR #5, `f3b015a`).
+
+### Security
+
+- Installer lockfile is fail-closed (`npm ci` only). CONTRIBUTING documents store SHA pinning (`f655b35`).
+
+### Ghi chú
+
+Formula và installer README trỏ LightHaru/chatgpt-layer. One-liner ghim source tag v1.1.4. Lockfile fail-closed (chỉ npm ci). Runtime main.ts tách module. Watcher-health: self-update Layer mặc định tắt. Compatibility layer theo capability (PR #6).
+
 ## 1.1.3
 
 Release notes: [docs/releases/1.1.3.md](docs/releases/1.1.3.md)

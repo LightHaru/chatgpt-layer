@@ -4,7 +4,7 @@ class Codexplusplus < Formula
   desc "ChatGPT Layer (unofficial ChatGPT desktop tweak loader)"
   homepage "https://github.com/LightHaru/chatgpt-layer"
   url "https://github.com/LightHaru/chatgpt-layer.git",
-      tag: "v1.1.3"
+      tag: "v1.1.4"
   license "MIT"
 
   depends_on "node"

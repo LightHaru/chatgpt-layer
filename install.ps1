@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = if ($env:CHATGPT_LAYER_REPO) { $env:CHATGPT_LAYER_REPO } elseif ($env:CODEX_PLUSPLUS_REPO) { $env:CODEX_PLUSPLUS_REPO } else { "LightHaru/chatgpt-layer" }
-$Ref = if ($env:CODEX_PLUSPLUS_REF) { $env:CODEX_PLUSPLUS_REF } else { "v1.1.3" }
+$Ref = if ($env:CODEX_PLUSPLUS_REF) { $env:CODEX_PLUSPLUS_REF } else { "v1.1.4" }
 $InstallDir = if ($env:CODEX_PLUSPLUS_SOURCE_DIR) { $env:CODEX_PLUSPLUS_SOURCE_DIR } else { Join-Path $HOME ".codex-plusplus\source" }
 
 function Fail($Message) {

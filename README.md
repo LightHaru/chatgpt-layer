@@ -51,7 +51,7 @@ Unofficial. Not affiliated with OpenAI.
 
 ## Install <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
 
-The one-liners fetch the installer script from `main` (fail-closed lockfile). That script then pins the downloaded source to tag `v1.1.3` unless `CODEX_PLUSPLUS_REF` is set.
+The one-liners fetch the installer script from `main` (fail-closed lockfile). That script then pins the downloaded source to tag `v1.1.4` unless `CODEX_PLUSPLUS_REF` is set.
 
 <p>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white">
@@ -143,7 +143,7 @@ Update Layer itself with `chatgpt-layer update`. Layer self-update is opt-in and
 
 Tweak updates (store-listed): the Tweaks sidebar badge counts pending updates. Open Tweaks and click **Update** — Layer installs the pinned `approvedCommitSha` from `store/index.json`, not an unpinned latest tag.
 
-## Security <img alt="" src="https://img.shields.io/badge/pin%201.1.3-111827?style=flat-square">
+## Security <img alt="" src="https://img.shields.io/badge/pin%201.1.4-111827?style=flat-square">
 
 Tweaks are unsandboxed local code running inside ChatGPT. Install only from sources you trust.
 
@@ -254,7 +254,7 @@ Không chính thức. Không liên kết với OpenAI.
 
 ## Cài đặt <img alt="" src="https://img.shields.io/badge/one--liner-3b82f6?style=flat-square">
 
-One-liner lấy script cài từ `main` (lockfile fail-closed). Script đó ghim source tải về tag `v1.1.3` trừ khi đặt `CODEX_PLUSPLUS_REF`.
+One-liner lấy script cài từ `main` (lockfile fail-closed). Script đó ghim source tải về tag `v1.1.4` trừ khi đặt `CODEX_PLUSPLUS_REF`.
 
 <p>
   <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white">
@@ -346,7 +346,7 @@ Cập nhật Layer: `chatgpt-layer update`. Self-update Layer là opt-in, mặc 
 
 Cập nhật tweak (trên Store): badge trên sidebar Tweaks đếm số bản đang chờ. Vào Tweaks, bấm **Update** — Layer cài `approvedCommitSha` đã ghim trong `store/index.json`, không kéo tag latest chưa ghim.
 
-## Bảo mật <img alt="" src="https://img.shields.io/badge/pin%201.1.3-111827?style=flat-square">
+## Bảo mật <img alt="" src="https://img.shields.io/badge/pin%201.1.4-111827?style=flat-square">
 
 Tweak là code local không sandbox, chạy bên trong ChatGPT. Chỉ cài từ nguồn bạn tin.
 
