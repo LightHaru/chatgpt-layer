@@ -17,6 +17,7 @@ window, not a `hostId` route, and not Smart Routing.
 - Stable opaque session identity (`session_` + 24 hex chars).
 - Isolated filesystem layout under Layer's user-data root.
 - In-memory lifecycle: `STOPPED` → `STARTING` → `RUNNING` → `STOPPING` → `STOPPED` / `FAILED`.
+- MS-2A invariant: one session = one Layer-owned Codex app-server child. The transport registry attaches to that session; it does not spawn a second process. Production app-server spawn stays BLOCKED.
 - Trusted-executable spawn only. Tweaks cannot pass argv, shell, env maps, or paths.
 - Read-only tweak API: `api.codex.sessions.list()` and `getStatus(id)`, gated by `codex-sessions`.
 - Bounded shutdown of live children on `will-quit`.

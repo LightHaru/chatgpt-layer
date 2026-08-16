@@ -1,5 +1,4 @@
 import type { CodexSessionManager } from "../codex-sessions/manager";
-import { createFailClosedAppServerLauncher, type CodexAppServerLauncher } from "./launcher";
 import { CodexSessionTransportRegistry } from "./registry";
 import { CodexSessionRouter } from "./router";
 import { ThreadOwnerStore } from "./thread-owner-store";
@@ -14,7 +13,6 @@ export interface CodexAppServerHost {
 export interface CreateAppServerHostOptions {
   userRoot: string;
   sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
-  launcher?: CodexAppServerLauncher;
   initializeParams?: unknown;
   initializeTimeoutMs?: number;
   selectSession?: () => string | null;
@@ -22,15 +20,14 @@ export interface CreateAppServerHostOptions {
 }
 
 /**
- * Dormant host. Production uses the fail-closed launcher so no child is
- * spawned. No public IPC. No session auto-start.
+ * Dormant host. No production launcher: invocation is BLOCKED, so MS-2A
+ * never spawns an app-server child (and never a second child beside MS-1).
+ * Tests attach fake/fixture transports. No public IPC. No session auto-start.
  */
 export function createCodexAppServerHost(options: CreateAppServerHostOptions): CodexAppServerHost {
-  const launcher = options.launcher ?? createFailClosedAppServerLauncher();
   const owners = new ThreadOwnerStore(options.userRoot);
   const registry = new CodexSessionTransportRegistry({
     userRoot: options.userRoot,
-    launcher,
     sessionManager: options.sessionManager,
     initializeParams: options.initializeParams,
     initializeTimeoutMs: options.initializeTimeoutMs,
@@ -41,6 +38,7 @@ export function createCodexAppServerHost(options: CreateAppServerHostOptions): C
     selectSession: options.selectSession,
     requestTimeoutMs: options.initializeTimeoutMs,
   });
+  void options.log;
   return {
     owners,
     registry,

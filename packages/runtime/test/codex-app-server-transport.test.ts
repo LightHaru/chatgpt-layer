@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { CodexSessionManager, type CodexManagedChild, type CodexProcessLauncher } from "../src/codex-sessions";
+import { sessionCodexHome, sessionSqliteHome } from "../src/codex-sessions/paths";
 import {
   CodexAppServerError,
   CodexSessionTransportRegistry,
@@ -114,7 +115,6 @@ test("multi-session fake transports isolate correlation, notifications, and cras
     const registry = new CodexSessionTransportRegistry({
       userRoot: root,
       sessionManager: mgr,
-      launcher: createFailClosedAppServerLauncher(),
     });
     const ta = createFakeTransport(a.id, { timeoutMs: 200, threadIdPrefix: "thread_a_" });
     const tb = createFakeTransport(b.id, {
@@ -182,25 +182,30 @@ test("concurrent correlation stays isolated per transport", async () => {
   await b.close();
 });
 
-test("registry start uses injected launcher and refuses STOPPED sessions", async () => {
+test("registry attaches a transport without launching a second child", async () => {
   const root = tempRoot();
   try {
-    const { mgr, a } = await runningSession(root);
+    const lifecycle = new LifecycleLauncher();
+    const mgr = new CodexSessionManager({ userRoot: root, launcher: lifecycle, stopTimeoutMs: 30, killTimeoutMs: 30 });
     const stopped = mgr.createSession({ label: "stopped" });
+    let launches = 0;
+    const launcher = createInjectedAppServerLauncher((intent) => {
+      launches += 1;
+      return createFakeTransport(intent.sessionId, { timeoutMs: 200 });
+    });
     const registry = new CodexSessionTransportRegistry({
       userRoot: root,
       sessionManager: mgr,
-      launcher: createInjectedAppServerLauncher((intent) => createFakeTransport(intent.sessionId, { timeoutMs: 200 })),
       initializeTimeoutMs: 200,
     });
-    await assert.rejects(registry.start(stopped.id), (err: unknown) => {
-      assert.ok(err instanceof CodexAppServerError);
-      assert.equal(err.kind, "session-not-running");
-      return true;
-    });
-    const record = await registry.start(a.id);
+    assert.equal(mgr.getSessionStatus(stopped.id).lifecycle, "STOPPED");
+    const transport = createFakeTransport(stopped.id, { timeoutMs: 200 });
+    const record = await registry.attachAndInitialize(stopped.id, transport);
     assert.equal(record.ready, true);
-    assert.ok(registry.get(a.id));
+    assert.ok(registry.get(stopped.id));
+    assert.equal(launches, 0);
+    assert.equal(lifecycle.children.size, 0);
+    void launcher;
     await registry.closeAll();
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -211,19 +216,27 @@ test("fixture child stdio initialize, thread/start, crash, malformed, delayed", 
   const root = tempRoot();
   const fixture = fileURLToPath(new URL("./fixtures/fake-app-server.js", import.meta.url));
   try {
-    const { mgr, a } = await runningSession(root);
+    const lifecycle = new LifecycleLauncher();
+    const mgr = new CodexSessionManager({ userRoot: root, launcher: lifecycle, stopTimeoutMs: 30, killTimeoutMs: 30 });
+    const a = mgr.createSession({ label: "A" });
+    const intent = {
+      sessionId: a.id,
+      codexHome: sessionCodexHome(root, a.id),
+      sqliteHome: sessionSqliteHome(root, a.id),
+    };
     const healthy = new CodexSessionTransportRegistry({
       userRoot: root,
       sessionManager: mgr,
-      launcher: createFixtureAppServerLauncher({
-        nodeExecutable: process.execPath,
-        fixturePath: fixture,
-        timeoutMs: 500,
-      }),
       initializeTimeoutMs: 500,
     });
-    const record = await healthy.start(a.id);
+    const healthyTransport = await createFixtureAppServerLauncher({
+      nodeExecutable: process.execPath,
+      fixturePath: fixture,
+      timeoutMs: 500,
+    }).launchAppServer(intent);
+    const record = await healthy.attachAndInitialize(a.id, healthyTransport);
     assert.equal(record.ready, true);
+    assert.equal(lifecycle.children.size, 0);
     const started = await record.transport.request("thread/start", { prompt: "hi" });
     const threadId = (started.result as { thread: { id: string } }).thread.id;
     assert.match(threadId, /^thread_fixture_/);
@@ -234,29 +247,35 @@ test("fixture child stdio initialize, thread/start, crash, malformed, delayed", 
     const crashing = new CodexSessionTransportRegistry({
       userRoot: root,
       sessionManager: mgr,
-      launcher: createFixtureAppServerLauncher({
-        nodeExecutable: process.execPath,
-        fixturePath: fixture,
-        fixtureArgs: ["--crash"],
-        timeoutMs: 500,
-      }),
       initializeTimeoutMs: 500,
     });
-    await assert.rejects(crashing.start(a.id), (err: unknown) => err instanceof CodexAppServerError);
+    const crashTransport = await createFixtureAppServerLauncher({
+      nodeExecutable: process.execPath,
+      fixturePath: fixture,
+      fixtureArgs: ["--crash"],
+      timeoutMs: 500,
+    }).launchAppServer(intent);
+    await assert.rejects(
+      crashing.attachAndInitialize(a.id, crashTransport),
+      (err: unknown) => err instanceof CodexAppServerError,
+    );
     await crashing.closeAll();
 
     const bad = new CodexSessionTransportRegistry({
       userRoot: root,
       sessionManager: mgr,
-      launcher: createFixtureAppServerLauncher({
-        nodeExecutable: process.execPath,
-        fixturePath: fixture,
-        fixtureArgs: ["--malformed"],
-        timeoutMs: 500,
-      }),
       initializeTimeoutMs: 500,
     });
-    await assert.rejects(bad.start(a.id), (err: unknown) => err instanceof CodexAppServerError);
+    const badTransport = await createFixtureAppServerLauncher({
+      nodeExecutable: process.execPath,
+      fixturePath: fixture,
+      fixtureArgs: ["--malformed"],
+      timeoutMs: 500,
+    }).launchAppServer(intent);
+    await assert.rejects(
+      bad.attachAndInitialize(a.id, badTransport),
+      (err: unknown) => err instanceof CodexAppServerError,
+    );
     await bad.closeAll();
   } finally {
     rmSync(root, { recursive: true, force: true });

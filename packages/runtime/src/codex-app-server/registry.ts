@@ -1,8 +1,6 @@
 import type { CodexSessionManager } from "../codex-sessions/manager";
-import { sessionCodexHome, sessionSqliteHome } from "../codex-sessions/paths";
 import { CodexAppServerError } from "./errors";
 import { performInitializeHandshake } from "./handshake";
-import type { CodexAppServerLauncher } from "./launcher";
 import type { CodexAppServerTransport } from "./transport";
 
 export interface SessionTransportRecord {
@@ -15,19 +13,20 @@ export interface SessionTransportRecord {
 
 export interface CodexSessionTransportRegistryOptions {
   userRoot: string;
-  launcher: CodexAppServerLauncher;
   sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
   initializeParams?: unknown;
   initializeTimeoutMs?: number;
 }
 
 /**
- * sessionId → live transport. Only RUNNING sessions. Failures isolate to
- * that session. Production launcher is fail-closed.
+ * sessionId → live transport.
+ *
+ * Attach-only. Does not spawn a Codex child and does not require an MS-1
+ * lifecycle child to already be RUNNING. One session owns at most one
+ * transport; a future unified MS-2B process supplies both lifecycle and
+ * stdio. Production invocation stays BLOCKED outside this registry.
  */
 export class CodexSessionTransportRegistry {
-  private readonly userRoot: string;
-  private readonly launcher: CodexAppServerLauncher;
   private readonly sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
   private readonly initializeParams: unknown;
   private readonly initializeTimeoutMs?: number;
@@ -35,8 +34,7 @@ export class CodexSessionTransportRegistry {
   private closed = false;
 
   constructor(options: CodexSessionTransportRegistryOptions) {
-    this.userRoot = options.userRoot;
-    this.launcher = options.launcher;
+    void options.userRoot;
     this.sessionManager = options.sessionManager;
     this.initializeParams = options.initializeParams ?? {};
     this.initializeTimeoutMs = options.initializeTimeoutMs;
@@ -56,29 +54,31 @@ export class CodexSessionTransportRegistry {
   }
 
   /**
-   * TEST-ONLY: attach an already-constructed transport. Still requires RUNNING.
+   * Register a transport that already belongs to this session.
+   * Tests inject fakes/fixtures. Does not launch a process.
    */
   attach(sessionId: string, transport: CodexAppServerTransport, ready = true): void {
     this.assertOpen();
-    this.assertRunning(sessionId);
+    this.assertKnownSession(sessionId);
     if (this.records.has(sessionId)) {
       throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
     }
     this.bind(sessionId, transport, ready, this.initializeParams, undefined);
   }
 
-  async start(sessionId: string): Promise<SessionTransportRecord> {
+  /**
+   * Attach then run initialize / initialized on that same transport.
+   * Still does not spawn a child.
+   */
+  async attachAndInitialize(
+    sessionId: string,
+    transport: CodexAppServerTransport,
+  ): Promise<SessionTransportRecord> {
     this.assertOpen();
-    this.assertRunning(sessionId);
+    this.assertKnownSession(sessionId);
     if (this.records.has(sessionId)) {
       throw new CodexAppServerError("already-attached", "session already has a transport", sessionId);
     }
-    this.sessionManager.getSessionStatus(sessionId);
-    const transport = await this.launcher.launchAppServer({
-      sessionId,
-      codexHome: sessionCodexHome(this.userRoot, sessionId),
-      sqliteHome: sessionSqliteHome(this.userRoot, sessionId),
-    });
     try {
       const handshake = await performInitializeHandshake(
         transport,
@@ -96,7 +96,8 @@ export class CodexSessionTransportRegistry {
   }
 
   /**
-   * Reject new work, close transport. Does not stop the MS-1 child itself.
+   * Reject new work, close transport. Does not stop any MS-1 lifecycle child.
+   * Future MS-2B: stop is one operation on the unified session process.
    */
   async stop(sessionId: string): Promise<void> {
     const record = this.records.get(sessionId);
@@ -135,15 +136,8 @@ export class CodexSessionTransportRegistry {
     });
   }
 
-  private assertRunning(sessionId: string): void {
-    const status = this.sessionManager.getSessionStatus(sessionId);
-    if (status.lifecycle !== "RUNNING") {
-      throw new CodexAppServerError(
-        "session-not-running",
-        `session ${sessionId} is ${status.lifecycle}, transport requires RUNNING`,
-        sessionId,
-      );
-    }
+  private assertKnownSession(sessionId: string): void {
+    this.sessionManager.getSessionStatus(sessionId);
   }
 
   private assertOpen(): void {

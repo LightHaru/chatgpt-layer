@@ -14,7 +14,7 @@ export function isJsonId(value: unknown): value is JsonId {
 }
 
 export function requestIdKey(id: JsonId): string {
-  return typeof id === "number" ? `#${id}` : id;
+  return typeof id === "number" ? `n:${id}` : `s:${id}`;
 }
 
 export function parseAppServerMessage(raw: unknown): AppServerMessage {
@@ -66,7 +66,11 @@ export function serializeAppServerMessage(message: AppServerMessage): string {
   if (message.params !== undefined) out.params = message.params;
   if (message.result !== undefined) out.result = message.result;
   if (message.error !== undefined) out.error = message.error;
-  return JSON.stringify(out);
+  try {
+    return JSON.stringify(out);
+  } catch {
+    throw new CodexAppServerError("malformed", "app-server message is not serializable");
+  }
 }
 
 /**

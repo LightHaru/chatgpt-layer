@@ -1,13 +1,15 @@
 import type { Readable, Writable } from "node:stream";
 import { CodexAppServerError } from "./errors";
-import { NdjsonParser } from "./framing";
-import { AbstractAppServerTransport, encodeForStdio } from "./transport";
+import { NdjsonParser, assertOutboundMessage } from "./framing";
+import { AbstractAppServerTransport } from "./transport";
 import type { AppServerMessage } from "./types";
 
 /**
  * Internal stdio owner. Never exposed to tweaks.
- * MS-1 CodexManagedChild stays lifecycle-only; this is a separate stdio
- * adapter used by tests and (if ever proven) production app-server children.
+ *
+ * MS-2A does not spawn a second Codex process beside the MS-1 lifecycle
+ * child. This adapter wraps pipes the test harness (or a future unified
+ * MS-2B session process) already owns. Production invocation stays BLOCKED.
  */
 export interface CodexStdioPipes {
   stdin: Writable;
@@ -57,6 +59,11 @@ export class StdioAppServerTransport extends AbstractAppServerTransport {
     this.pipes.stdout.on("error", () => {
       void this.close(new CodexAppServerError("child-exit", "app-server stdout error", options.sessionId));
     });
+    this.pipes.stdin.on("error", (error: Error) => {
+      void this.close(
+        new CodexAppServerError("internal", error.message || "app-server stdin error", options.sessionId),
+      );
+    });
     this.pipes.stderr?.on("data", () => {});
     this.pipes.stderr?.resume?.();
     this.unsubExit = this.pipes.onExit?.((code, signal) => {
@@ -71,22 +78,54 @@ export class StdioAppServerTransport extends AbstractAppServerTransport {
   }
 
   private writeMessage(message: AppServerMessage): Promise<void> {
-    const payload = encodeForStdio(message);
-    this.writeChain = this.writeChain.then(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          const stdin = this.pipes.stdin;
-          if (stdin.destroyed || stdin.writableEnded) {
-            reject(new CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
-            return;
+    if (this.isClosed) {
+      return Promise.reject(new CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
+    }
+    let payload: Buffer;
+    try {
+      payload = assertOutboundMessage(message);
+    } catch (error) {
+      const wrapped =
+        error instanceof CodexAppServerError
+          ? error
+          : new CodexAppServerError("malformed", "app-server outbound encode failed", this.sessionId);
+      void this.close(wrapped);
+      return Promise.reject(wrapped);
+    }
+    const write = this.writeChain.then(() => {
+      if (this.isClosed) {
+        return Promise.reject(new CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
+      }
+      return new Promise<void>((resolve, reject) => {
+        const stdin = this.pipes.stdin;
+        if (stdin.destroyed || stdin.writableEnded) {
+          const err = new CodexAppServerError("closed", "app-server stdin is closed", this.sessionId);
+          void this.close(err);
+          reject(err);
+          return;
+        }
+        stdin.write(payload, (error) => {
+          if (error) {
+            const wrapped = new CodexAppServerError(
+              "internal",
+              error.message || "app-server stdin write failed",
+              this.sessionId,
+            );
+            void this.close(wrapped);
+            reject(wrapped);
+          } else {
+            resolve();
           }
-          stdin.write(payload, (error) => {
-            if (error) reject(error);
-            else resolve();
-          });
-        }),
+        });
+      });
+    });
+    // Absorb rejection so the chain does not stay poisoned; isClosed blocks
+    // subsequent writes after a failure.
+    this.writeChain = write.then(
+      () => undefined,
+      () => undefined,
     );
-    return this.writeChain;
+    return write;
   }
 
   private shutdownPipes(): void {

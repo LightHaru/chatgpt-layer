@@ -8,7 +8,6 @@ import {
   CodexAppServerError,
   CodexSessionRouter,
   CodexSessionTransportRegistry,
-  createFailClosedAppServerLauncher,
   createFakeTransport,
   isQuotaExhaustionKind,
 } from "../src/codex-app-server";
@@ -57,7 +56,6 @@ async function stack() {
   const registry = new CodexSessionTransportRegistry({
     userRoot: root,
     sessionManager: mgr,
-    launcher: createFailClosedAppServerLauncher(),
   });
   const ta = createFakeTransport(a.id, { timeoutMs: 200, threadIdPrefix: "thread_a_" });
   const tb = createFakeTransport(b.id, { timeoutMs: 200, threadIdPrefix: "thread_b_" });

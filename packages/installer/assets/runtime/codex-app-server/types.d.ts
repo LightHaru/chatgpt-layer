@@ -45,6 +45,7 @@ export declare const MAX_BUFFER_BYTES: number;
 export declare const MAX_PENDING_REQUESTS = 256;
 export declare const MAX_NOTIFICATION_LISTENERS = 16;
 export declare const MAX_INBOUND_QUEUE = 256;
+export declare const MAX_SERVER_REQUESTS_IN_FLIGHT = 16;
 export declare const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 export declare const MAX_THREAD_ID_LENGTH = 200;
 export declare const MAX_THREAD_OWNERS = 4096;

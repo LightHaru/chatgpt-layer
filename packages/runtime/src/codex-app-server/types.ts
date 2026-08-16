@@ -54,6 +54,7 @@ export const MAX_BUFFER_BYTES = 512 * 1024;
 export const MAX_PENDING_REQUESTS = 256;
 export const MAX_NOTIFICATION_LISTENERS = 16;
 export const MAX_INBOUND_QUEUE = 256;
+export const MAX_SERVER_REQUESTS_IN_FLIGHT = 16;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export const MAX_THREAD_ID_LENGTH = 200;
 export const MAX_THREAD_OWNERS = 4096;

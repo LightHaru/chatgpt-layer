@@ -14,9 +14,10 @@ export function isUsableThreadId(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_THREAD_ID_LENGTH) {
     return false;
   }
+  if (/[\u0000-\u001F\u007F]/.test(value)) return false;
   if (/\s/.test(value)) return false;
   if (value.includes("..") || value.includes("/") || value.includes("\\")) return false;
-  if (value.includes(":") || value.includes("@") || value.includes("\\0")) return false;
+  if (value.includes(":") || value.includes("@")) return false;
   if (value.startsWith("\\\\")) return false;
   return true;
 }

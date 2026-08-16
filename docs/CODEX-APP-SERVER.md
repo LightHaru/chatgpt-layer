@@ -59,12 +59,16 @@ ChatGPT Desktop  ──(live app-server)──►  bundled Codex     [MS-2B, not
        ▲
        └── Layer preload/main (unchanged single-session default)
 
-Layer CodexSessionManager (MS-1, dormant)
-       └── optional CodexSessionTransportRegistry (MS-2A)
-              ├── fail-closed production launcher   [BLOCKED]
-              ├── in-process / fixture transports   [TEST-ONLY]
+Layer CodexSessionManager (MS-1, dormant)     identity + lifecycle state
+       └── CodexSessionTransportRegistry (MS-2A)  attach/handshake only
+              ├── attached fake / fixture transport [TEST-ONLY]
+              ├── production spawn                  [BLOCKED — no second child]
               ├── ThreadOwnerStore
               └── CodexSessionRouter (simple policy, no Smart Routing)
+
+Invariant: one session = one Layer-owned Codex app-server child.
+MS-2A does not spawn a second process beside the MS-1 lifecycle child.
+Future MS-2B: STOPPED → STARTING → one child → transport init → RUNNING.
 ```
 
 ## 3. Protocol  TEST-ONLY / REFERENCE
@@ -84,14 +88,18 @@ JSON-RPC 2.0 `jsonrpc` is **not** required. If present it is kept in `extra`.
 
 ## 4. Framing  TEST-ONLY / PLANNED
 
-Implemented: newline-delimited JSON with conservative bounds.
+Implemented: newline-delimited JSON with **byte-based** bounds. Raw bytes
+are buffered until a complete `0x0A` frame exists, then decoded with
+**fatal UTF-8** (no U+FFFD). `pendingBytes` is the byte length.
 
 | Bound | Value |
 |---|---|
 | `MAX_MESSAGE_BYTES` | 256 KiB |
 | `MAX_BUFFER_BYTES` | 512 KiB |
 
-Handles partial chunks, multiple messages per chunk, `\r\n`, empty lines.
+Handles partial chunks, multiple messages per chunk, CRLF (`0x0D 0x0A`),
+empty lines, and UTF-8 split across stdout chunks. Outbound writes are
+bounded with the same `MAX_MESSAGE_BYTES` (circular JSON fails the request).
 Malformed or oversized **fails that child/session parser**, not Electron main.
 
 stderr is drained as diagnostics and never parsed as protocol
@@ -103,7 +111,9 @@ is observed.
 ## 5. Transport
 
 `CodexAppServerTransport`: `request`, `notify`, `onNotification`,
-`onServerRequest`, `close`.
+`onServerRequest` / `setServerRequestHandler` (Option A: **one** handler
+that returns `{ result }` or `{ error }`; the transport sends exactly one
+response), `close`.
 
 - Tweaks never see stdin, stdout, stderr, pid, `ChildProcess`, env, or exe.
 - Tests use `InProcessAppServerTransport` / `createFakeTransport`.
@@ -120,17 +130,19 @@ id sharing: each transport has its own map.
 ## 7. Lifecycle integration
 
 MS-1 `CodexManagedChild` stays lifecycle-only (stdout drained). MS-2A does
-not change empty-argv spawn.
+not change empty-argv spawn and **does not launch a second child**.
 
-`CodexSessionTransportRegistry` maps `sessionId → live transport` for
-**RUNNING** sessions only.
+`CodexSessionTransportRegistry` maps `sessionId → live transport`. It
+**attaches** a transport the caller already owns (tests inject fakes or a
+fixture). It does not require the MS-1 lifecycle to be RUNNING first.
 
 | Event | Transport |
 |---|---|
-| `start` | launch → `initialize` → `initialized` → ready |
-| unexpected child/parser failure | close, reject pending, drop registry entry (MS-1 child still goes `FAILED` via existing exit handler if it was the same process; injected fakes only close the transport) |
-| `stop` | reject new work, close transport |
+| `attach` / `attachAndInitialize` | register (optional handshake) — no spawn |
+| unexpected child/parser failure | close, reject pending, drop registry entry |
+| `stop` | reject new work, close transport (does not stop an MS-1 dummy child) |
 | `will-quit` | `appServerHost.closeAll()` then MS-1 `shutdownAll` |
+| future production (PLANNED/BLOCKED) | STOPPED → STARTING → **one** child → init → RUNNING; unexpected exit → FAILED |
 
 Nothing auto-starts. The host in `main.ts` is dormant.
 
@@ -180,11 +192,21 @@ are **never** treated as quota exhaustion.
 
 No recursive JSON search. Nested lookalikes in unrelated fields are ignored.
 
-## 11. Server-initiated requests
+## 11. Server-initiated requests  (Option A)
 
-Inbound `{id, method}` is a server request. If no listener is registered,
-Layer replies `{id, error: {code: -32601, message: "Method not found"}}` so
-the child does not deadlock. Unsupported production flows stay fail-closed.
+Inbound `{id, method}` is a server request. MS-2A implements a **single**
+handler (`onServerRequest` / `setServerRequestHandler`) that must return
+`{ result }` or `{ error }`. The transport awaits it and sends exactly one
+response. Handler throw → bounded `{code: -32603, message: "Internal error"}`.
+Write failure closes the transport.
+
+If no handler is registered, Layer replies
+`{id, error: {code: -32601, message: "Method not found"}}` so the child does
+not deadlock.
+
+In-flight async handlers are counted (`serverRequestsInFlight`) and capped
+(`MAX_SERVER_REQUESTS_IN_FLIGHT`). Overflow replies `-32000` and does not
+queue unbounded promises.
 
 ## 12. Security boundaries
 
@@ -193,7 +215,8 @@ the child does not deadlock. Unsupported production flows stay fail-closed.
 - No token leakage: store allowlist; stderr/stdout never logged; metadata
   still uses MS-1 `stripCredentials`.
 - Malformed/huge JSON fails that session.
-- Request id collision avoided via `layer:` prefix per transport.
+- Request id collision avoided via `layer:` prefix per transport and
+  type-safe keys (`n:1` vs `s:1` vs `s:#1`).
 - Pending/listener maps are bounded; close unsubscribes.
 - Spoofed session ids fail `assertSessionId`.
 - Cross-session responses cannot settle another transport's map.

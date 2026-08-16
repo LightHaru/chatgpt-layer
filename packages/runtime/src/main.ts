@@ -261,9 +261,10 @@ const sessionManager = new CodexSessionManager({
 });
 setCodexSessionManager(sessionManager);
 
-// MS-2A: dormant app-server host. Production launcher is fail-closed (invocation
-// not proven). No public mutation IPC. Sessions stay STOPPED until main code
-// starts them; this host never auto-starts children or intercepts Desktop.
+// MS-2A: dormant app-server host. Attach-only registry (no second child).
+// Production invocation is BLOCKED. No public mutation IPC. Sessions stay
+// STOPPED until main code starts them; this host never auto-starts children
+// or intercepts Desktop.
 const appServerHost = createCodexAppServerHost({
   userRoot,
   sessionManager,

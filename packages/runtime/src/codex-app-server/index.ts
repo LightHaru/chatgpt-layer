@@ -18,12 +18,14 @@ export {
   isJsonId,
   isRecord,
 } from "./protocol";
-export { NdjsonParser, encodeNdjson } from "./framing";
+export { NdjsonParser, encodeNdjson, assertOutboundMessage } from "./framing";
 export { RequestMap } from "./request-map";
 export { AbstractAppServerTransport, encodeForStdio } from "./transport";
 export type {
   CodexAppServerTransport,
   NotificationListener,
+  ServerRequestHandler,
+  ServerRequestResult,
   ServerRequestListener,
   CloseListener,
   TransportRequestOptions,
@@ -72,6 +74,7 @@ export {
   MAX_MESSAGE_BYTES,
   MAX_BUFFER_BYTES,
   MAX_PENDING_REQUESTS,
+  MAX_SERVER_REQUESTS_IN_FLIGHT,
   MAX_THREAD_ID_LENGTH,
   MAX_THREAD_OWNERS,
   THREAD_OWNER_STORE_VERSION,

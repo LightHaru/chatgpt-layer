@@ -1,17 +1,30 @@
 import { CodexAppServerError } from "./errors";
-import { classifyMessage, serializeAppServerMessage } from "./protocol";
+import { assertOutboundMessage } from "./framing";
+import { classifyMessage } from "./protocol";
 import { RequestMap } from "./request-map";
-import type { AppServerMessage, JsonRpcResponse } from "./types";
+import type { AppServerMessage, JsonRpcResponse, RpcError } from "./types";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   MAX_INBOUND_QUEUE,
   MAX_NOTIFICATION_LISTENERS,
   MAX_PENDING_REQUESTS,
+  MAX_SERVER_REQUESTS_IN_FLIGHT,
 } from "./types";
 
 export type NotificationListener = (message: AppServerMessage) => void;
-export type ServerRequestListener = (message: AppServerMessage) => void | Promise<void>;
 export type CloseListener = (error: Error | null) => void;
+
+/** Option A: a single handler that must return exactly one result or error. */
+export type ServerRequestResult =
+  | { result: unknown; error?: undefined }
+  | { error: RpcError; result?: undefined };
+
+export type ServerRequestHandler = (
+  request: AppServerMessage,
+) => ServerRequestResult | Promise<ServerRequestResult>;
+
+/** @deprecated Use ServerRequestHandler. Kept as an alias for the single-handler API. */
+export type ServerRequestListener = ServerRequestHandler;
 
 export interface TransportRequestOptions {
   timeoutMs?: number;
@@ -26,7 +39,13 @@ export interface CodexAppServerTransport {
   request(method: string, params?: unknown, options?: TransportRequestOptions): Promise<JsonRpcResponse>;
   notify(method: string, params?: unknown): Promise<void>;
   onNotification(listener: NotificationListener): () => void;
-  onServerRequest(listener: ServerRequestListener): () => void;
+  /**
+   * Register the ONE server-request handler. A second registration without
+   * unsubscribing the first is rejected. The handler must return
+   * `{ result }` or `{ error }`; the transport sends exactly one response.
+   */
+  onServerRequest(handler: ServerRequestHandler): () => void;
+  setServerRequestHandler(handler: ServerRequestHandler | null): void;
   onClose(listener: CloseListener): () => void;
   close(error?: Error): Promise<void>;
 }
@@ -36,6 +55,7 @@ export interface AbstractTransportOptions {
   timeoutMs?: number;
   maxPending?: number;
   maxInboundQueue?: number;
+  maxServerRequestsInFlight?: number;
   send: (message: AppServerMessage) => Promise<void> | void;
   closeSink?: () => Promise<void> | void;
 }
@@ -48,10 +68,12 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
   readonly sessionId: string;
   protected readonly requests: RequestMap;
   private readonly notificationListeners = new Set<NotificationListener>();
-  private readonly serverRequestListeners = new Set<ServerRequestListener>();
+  private serverRequestHandler: ServerRequestHandler | null = null;
   private readonly closeListeners = new Set<CloseListener>();
   private readonly maxInboundQueue: number;
+  private readonly maxServerRequestsInFlight: number;
   private inboundQueued = 0;
+  private serverRequestsInFlight = 0;
   private closed = false;
   private readonly sendImpl: AbstractTransportOptions["send"];
   private readonly closeSink?: AbstractTransportOptions["closeSink"];
@@ -63,6 +85,7 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
       maxPending: options.maxPending ?? MAX_PENDING_REQUESTS,
     });
     this.maxInboundQueue = options.maxInboundQueue ?? MAX_INBOUND_QUEUE;
+    this.maxServerRequestsInFlight = options.maxServerRequestsInFlight ?? MAX_SERVER_REQUESTS_IN_FLIGHT;
     this.sendImpl = options.send;
     this.closeSink = options.closeSink;
   }
@@ -71,16 +94,29 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
     return this.closed;
   }
 
+  get inFlightServerRequests(): number {
+    return this.serverRequestsInFlight;
+  }
+
   async request(method: string, params?: unknown, options: TransportRequestOptions = {}): Promise<JsonRpcResponse> {
     this.assertOpen();
     const id = this.requests.allocateId();
+    const message: AppServerMessage = { id, method, params };
+    assertOutboundMessage(message);
     const pending = this.requests.expect(id, options.timeoutMs);
-    void Promise.resolve(this.sendImpl({ id, method, params })).catch((error) => {
-      this.requests.fail(
-        id,
-        error instanceof Error ? error : new CodexAppServerError("internal", String(error), this.sessionId),
+    // Await the correlation promise immediately so a timeout or send failure
+    // cannot reject `pending` while nobody is listening (unhandledRejection).
+    void Promise.resolve()
+      .then(() => this.sendImpl(message))
+      .then(
+        () => undefined,
+        (error) => {
+          const wrapped =
+            error instanceof Error ? error : new CodexAppServerError("internal", String(error), this.sessionId);
+          this.requests.fail(id, wrapped);
+          void this.close(wrapped);
+        },
       );
-    });
     const response = await pending;
     if (response.error) {
       throw new CodexAppServerError("protocol", response.error.message, this.sessionId);
@@ -90,7 +126,16 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
 
   async notify(method: string, params?: unknown): Promise<void> {
     this.assertOpen();
-    await this.sendImpl({ method, params });
+    const message: AppServerMessage = { method, params };
+    assertOutboundMessage(message);
+    try {
+      await this.sendImpl(message);
+    } catch (error) {
+      const wrapped =
+        error instanceof Error ? error : new CodexAppServerError("internal", String(error), this.sessionId);
+      void this.close(wrapped);
+      throw wrapped;
+    }
   }
 
   onNotification(listener: NotificationListener): () => void {
@@ -103,14 +148,18 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
     };
   }
 
-  onServerRequest(listener: ServerRequestListener): () => void {
-    if (this.serverRequestListeners.size >= MAX_NOTIFICATION_LISTENERS) {
-      throw new CodexAppServerError("internal", "too many server-request listeners");
+  onServerRequest(handler: ServerRequestHandler): () => void {
+    if (this.serverRequestHandler) {
+      throw new CodexAppServerError("internal", "server request handler already set");
     }
-    this.serverRequestListeners.add(listener);
+    this.serverRequestHandler = handler;
     return () => {
-      this.serverRequestListeners.delete(listener);
+      if (this.serverRequestHandler === handler) this.serverRequestHandler = null;
     };
+  }
+
+  setServerRequestHandler(handler: ServerRequestHandler | null): void {
+    this.serverRequestHandler = handler;
   }
 
   onClose(listener: CloseListener): () => void {
@@ -138,7 +187,7 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
       }
     }
     this.notificationListeners.clear();
-    this.serverRequestListeners.clear();
+    this.serverRequestHandler = null;
     this.closeListeners.clear();
   }
 
@@ -168,20 +217,7 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
         return;
       }
       if (kind === "server-request") {
-        if (this.serverRequestListeners.size === 0) {
-          void this.replyUnsupported(message);
-          return;
-        }
-        for (const listener of [...this.serverRequestListeners]) {
-          try {
-            const result = listener(message);
-            if (result && typeof (result as Promise<void>).then === "function") {
-              void (result as Promise<void>).catch(() => {});
-            }
-          } catch {
-            // isolate
-          }
-        }
+        void this.dispatchServerRequest(message);
         return;
       }
       void this.close(new CodexAppServerError("malformed", "invalid inbound app-server message", this.sessionId));
@@ -190,15 +226,52 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
     }
   }
 
-  private async replyUnsupported(message: AppServerMessage): Promise<void> {
-    if (message.id === undefined) return;
-    try {
-      await this.sendImpl({
-        id: message.id,
-        error: { code: -32601, message: "Method not found" },
+  private async dispatchServerRequest(message: AppServerMessage): Promise<void> {
+    if (this.closed || message.id === undefined) return;
+    if (this.serverRequestsInFlight >= this.maxServerRequestsInFlight) {
+      await this.sendServerResponse(message.id, {
+        error: { code: -32000, message: "too many in-flight server requests" },
       });
-    } catch {
-      void this.close(new CodexAppServerError("unsupported", "unhandled server request", this.sessionId));
+      return;
+    }
+    this.serverRequestsInFlight += 1;
+    try {
+      const handler = this.serverRequestHandler;
+      if (!handler) {
+        await this.sendServerResponse(message.id, {
+          error: { code: -32601, message: "Method not found" },
+        });
+        return;
+      }
+      let outcome: ServerRequestResult;
+      try {
+        outcome = await handler(message);
+      } catch {
+        outcome = { error: { code: -32603, message: "Internal error" } };
+      }
+      if (outcome && typeof outcome === "object" && "error" in outcome && outcome.error) {
+        await this.sendServerResponse(message.id, { error: outcome.error });
+      } else {
+        await this.sendServerResponse(message.id, { result: outcome?.result });
+      }
+    } finally {
+      this.serverRequestsInFlight -= 1;
+    }
+  }
+
+  private async sendServerResponse(
+    id: AppServerMessage["id"],
+    body: { result?: unknown; error?: RpcError },
+  ): Promise<void> {
+    if (id === undefined || this.closed) return;
+    const message: AppServerMessage = { id, ...body };
+    try {
+      assertOutboundMessage(message);
+      await this.sendImpl(message);
+    } catch (error) {
+      const wrapped =
+        error instanceof Error ? error : new CodexAppServerError("internal", String(error), this.sessionId);
+      void this.close(wrapped);
     }
   }
 
@@ -209,6 +282,7 @@ export class AbstractAppServerTransport implements CodexAppServerTransport {
   }
 }
 
-export function encodeForStdio(message: AppServerMessage): string {
-  return `${serializeAppServerMessage(message)}\n`;
+export function encodeForStdio(message: AppServerMessage): Buffer {
+  return assertOutboundMessage(message);
 }
+

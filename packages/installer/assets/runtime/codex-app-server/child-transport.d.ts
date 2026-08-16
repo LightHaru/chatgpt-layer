@@ -2,8 +2,10 @@ import type { Readable, Writable } from "node:stream";
 import { AbstractAppServerTransport } from "./transport";
 /**
  * Internal stdio owner. Never exposed to tweaks.
- * MS-1 CodexManagedChild stays lifecycle-only; this is a separate stdio
- * adapter used by tests and (if ever proven) production app-server children.
+ *
+ * MS-2A does not spawn a second Codex process beside the MS-1 lifecycle
+ * child. This adapter wraps pipes the test harness (or a future unified
+ * MS-2B session process) already owns. Production invocation stays BLOCKED.
  */
 export interface CodexStdioPipes {
     stdin: Writable;

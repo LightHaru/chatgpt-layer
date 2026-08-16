@@ -18,7 +18,7 @@ function isJsonId(value) {
         (typeof value === "number" && Number.isFinite(value));
 }
 function requestIdKey(id) {
-    return typeof id === "number" ? `#${id}` : id;
+    return typeof id === "number" ? `n:${id}` : `s:${id}`;
 }
 function parseAppServerMessage(raw) {
     if (!isRecord(raw)) {
@@ -79,7 +79,12 @@ function serializeAppServerMessage(message) {
         out.result = message.result;
     if (message.error !== undefined)
         out.error = message.error;
-    return JSON.stringify(out);
+    try {
+        return JSON.stringify(out);
+    }
+    catch {
+        throw new errors_1.CodexAppServerError("malformed", "app-server message is not serializable");
+    }
 }
 /**
  * Classify by shape, not by JSON-RPC 2.0 rules.

@@ -1,5 +1,4 @@
 import type { CodexSessionManager } from "../codex-sessions/manager";
-import type { CodexAppServerLauncher } from "./launcher";
 import type { CodexAppServerTransport } from "./transport";
 export interface SessionTransportRecord {
     sessionId: string;
@@ -10,18 +9,19 @@ export interface SessionTransportRecord {
 }
 export interface CodexSessionTransportRegistryOptions {
     userRoot: string;
-    launcher: CodexAppServerLauncher;
     sessionManager: Pick<CodexSessionManager, "getSessionStatus">;
     initializeParams?: unknown;
     initializeTimeoutMs?: number;
 }
 /**
- * sessionId → live transport. Only RUNNING sessions. Failures isolate to
- * that session. Production launcher is fail-closed.
+ * sessionId → live transport.
+ *
+ * Attach-only. Does not spawn a Codex child and does not require an MS-1
+ * lifecycle child to already be RUNNING. One session owns at most one
+ * transport; a future unified MS-2B process supplies both lifecycle and
+ * stdio. Production invocation stays BLOCKED outside this registry.
  */
 export declare class CodexSessionTransportRegistry {
-    private readonly userRoot;
-    private readonly launcher;
     private readonly sessionManager;
     private readonly initializeParams;
     private readonly initializeTimeoutMs?;
@@ -32,16 +32,22 @@ export declare class CodexSessionTransportRegistry {
     getRecord(sessionId: string): SessionTransportRecord | undefined;
     listReadySessionIds(): string[];
     /**
-     * TEST-ONLY: attach an already-constructed transport. Still requires RUNNING.
+     * Register a transport that already belongs to this session.
+     * Tests inject fakes/fixtures. Does not launch a process.
      */
     attach(sessionId: string, transport: CodexAppServerTransport, ready?: boolean): void;
-    start(sessionId: string): Promise<SessionTransportRecord>;
     /**
-     * Reject new work, close transport. Does not stop the MS-1 child itself.
+     * Attach then run initialize / initialized on that same transport.
+     * Still does not spawn a child.
+     */
+    attachAndInitialize(sessionId: string, transport: CodexAppServerTransport): Promise<SessionTransportRecord>;
+    /**
+     * Reject new work, close transport. Does not stop any MS-1 lifecycle child.
+     * Future MS-2B: stop is one operation on the unified session process.
      */
     stop(sessionId: string): Promise<void>;
     closeAll(): Promise<void>;
     private bind;
-    private assertRunning;
+    private assertKnownSession;
     private assertOpen;
 }

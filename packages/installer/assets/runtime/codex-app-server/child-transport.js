@@ -37,6 +37,9 @@ class StdioAppServerTransport extends transport_1.AbstractAppServerTransport {
         this.pipes.stdout.on("error", () => {
             void this.close(new errors_1.CodexAppServerError("child-exit", "app-server stdout error", options.sessionId));
         });
+        this.pipes.stdin.on("error", (error) => {
+            void this.close(new errors_1.CodexAppServerError("internal", error.message || "app-server stdin error", options.sessionId));
+        });
         this.pipes.stderr?.on("data", () => { });
         this.pipes.stderr?.resume?.();
         this.unsubExit = this.pipes.onExit?.((code, signal) => {
@@ -44,21 +47,48 @@ class StdioAppServerTransport extends transport_1.AbstractAppServerTransport {
         });
     }
     writeMessage(message) {
-        const payload = (0, transport_1.encodeForStdio)(message);
-        this.writeChain = this.writeChain.then(() => new Promise((resolve, reject) => {
-            const stdin = this.pipes.stdin;
-            if (stdin.destroyed || stdin.writableEnded) {
-                reject(new errors_1.CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
-                return;
+        if (this.isClosed) {
+            return Promise.reject(new errors_1.CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
+        }
+        let payload;
+        try {
+            payload = (0, framing_1.assertOutboundMessage)(message);
+        }
+        catch (error) {
+            const wrapped = error instanceof errors_1.CodexAppServerError
+                ? error
+                : new errors_1.CodexAppServerError("malformed", "app-server outbound encode failed", this.sessionId);
+            void this.close(wrapped);
+            return Promise.reject(wrapped);
+        }
+        const write = this.writeChain.then(() => {
+            if (this.isClosed) {
+                return Promise.reject(new errors_1.CodexAppServerError("closed", "app-server stdin is closed", this.sessionId));
             }
-            stdin.write(payload, (error) => {
-                if (error)
-                    reject(error);
-                else
-                    resolve();
+            return new Promise((resolve, reject) => {
+                const stdin = this.pipes.stdin;
+                if (stdin.destroyed || stdin.writableEnded) {
+                    const err = new errors_1.CodexAppServerError("closed", "app-server stdin is closed", this.sessionId);
+                    void this.close(err);
+                    reject(err);
+                    return;
+                }
+                stdin.write(payload, (error) => {
+                    if (error) {
+                        const wrapped = new errors_1.CodexAppServerError("internal", error.message || "app-server stdin write failed", this.sessionId);
+                        void this.close(wrapped);
+                        reject(wrapped);
+                    }
+                    else {
+                        resolve();
+                    }
+                });
             });
-        }));
-        return this.writeChain;
+        });
+        // Absorb rejection so the chain does not stay poisoned; isClosed blocks
+        // subsequent writes after a failure.
+        this.writeChain = write.then(() => undefined, () => undefined);
+        return write;
     }
     shutdownPipes() {
         this.unsubExit?.();

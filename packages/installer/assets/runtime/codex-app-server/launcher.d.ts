@@ -11,6 +11,8 @@ export interface CodexAppServerLauncher {
 /**
  * Production launcher. Fail-closed: the exact ChatGPT Desktop app-server
  * argv has not been proven in this tree. Callers cannot pass exe/argv/env.
+ * The session registry does not call this — tests may use it to build a
+ * fixture transport, then attach that transport to the registry.
  */
 export declare function createFailClosedAppServerLauncher(): CodexAppServerLauncher;
 export interface FixtureAppServerLauncherOptions {

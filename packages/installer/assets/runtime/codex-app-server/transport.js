@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AbstractAppServerTransport = void 0;
 exports.encodeForStdio = encodeForStdio;
 const errors_1 = require("./errors");
+const framing_1 = require("./framing");
 const protocol_1 = require("./protocol");
 const request_map_1 = require("./request-map");
 const types_1 = require("./types");
@@ -14,10 +15,12 @@ class AbstractAppServerTransport {
     sessionId;
     requests;
     notificationListeners = new Set();
-    serverRequestListeners = new Set();
+    serverRequestHandler = null;
     closeListeners = new Set();
     maxInboundQueue;
+    maxServerRequestsInFlight;
     inboundQueued = 0;
+    serverRequestsInFlight = 0;
     closed = false;
     sendImpl;
     closeSink;
@@ -28,18 +31,30 @@ class AbstractAppServerTransport {
             maxPending: options.maxPending ?? types_1.MAX_PENDING_REQUESTS,
         });
         this.maxInboundQueue = options.maxInboundQueue ?? types_1.MAX_INBOUND_QUEUE;
+        this.maxServerRequestsInFlight = options.maxServerRequestsInFlight ?? types_1.MAX_SERVER_REQUESTS_IN_FLIGHT;
         this.sendImpl = options.send;
         this.closeSink = options.closeSink;
     }
     get isClosed() {
         return this.closed;
     }
+    get inFlightServerRequests() {
+        return this.serverRequestsInFlight;
+    }
     async request(method, params, options = {}) {
         this.assertOpen();
         const id = this.requests.allocateId();
+        const message = { id, method, params };
+        (0, framing_1.assertOutboundMessage)(message);
         const pending = this.requests.expect(id, options.timeoutMs);
-        void Promise.resolve(this.sendImpl({ id, method, params })).catch((error) => {
-            this.requests.fail(id, error instanceof Error ? error : new errors_1.CodexAppServerError("internal", String(error), this.sessionId));
+        // Await the correlation promise immediately so a timeout or send failure
+        // cannot reject `pending` while nobody is listening (unhandledRejection).
+        void Promise.resolve()
+            .then(() => this.sendImpl(message))
+            .then(() => undefined, (error) => {
+            const wrapped = error instanceof Error ? error : new errors_1.CodexAppServerError("internal", String(error), this.sessionId);
+            this.requests.fail(id, wrapped);
+            void this.close(wrapped);
         });
         const response = await pending;
         if (response.error) {
@@ -49,7 +64,16 @@ class AbstractAppServerTransport {
     }
     async notify(method, params) {
         this.assertOpen();
-        await this.sendImpl({ method, params });
+        const message = { method, params };
+        (0, framing_1.assertOutboundMessage)(message);
+        try {
+            await this.sendImpl(message);
+        }
+        catch (error) {
+            const wrapped = error instanceof Error ? error : new errors_1.CodexAppServerError("internal", String(error), this.sessionId);
+            void this.close(wrapped);
+            throw wrapped;
+        }
     }
     onNotification(listener) {
         if (this.notificationListeners.size >= types_1.MAX_NOTIFICATION_LISTENERS) {
@@ -60,14 +84,18 @@ class AbstractAppServerTransport {
             this.notificationListeners.delete(listener);
         };
     }
-    onServerRequest(listener) {
-        if (this.serverRequestListeners.size >= types_1.MAX_NOTIFICATION_LISTENERS) {
-            throw new errors_1.CodexAppServerError("internal", "too many server-request listeners");
+    onServerRequest(handler) {
+        if (this.serverRequestHandler) {
+            throw new errors_1.CodexAppServerError("internal", "server request handler already set");
         }
-        this.serverRequestListeners.add(listener);
+        this.serverRequestHandler = handler;
         return () => {
-            this.serverRequestListeners.delete(listener);
+            if (this.serverRequestHandler === handler)
+                this.serverRequestHandler = null;
         };
+    }
+    setServerRequestHandler(handler) {
+        this.serverRequestHandler = handler;
     }
     onClose(listener) {
         this.closeListeners.add(listener);
@@ -96,7 +124,7 @@ class AbstractAppServerTransport {
             }
         }
         this.notificationListeners.clear();
-        this.serverRequestListeners.clear();
+        this.serverRequestHandler = null;
         this.closeListeners.clear();
     }
     /** Inbound dispatcher. Isolates listener exceptions. */
@@ -128,21 +156,7 @@ class AbstractAppServerTransport {
                 return;
             }
             if (kind === "server-request") {
-                if (this.serverRequestListeners.size === 0) {
-                    void this.replyUnsupported(message);
-                    return;
-                }
-                for (const listener of [...this.serverRequestListeners]) {
-                    try {
-                        const result = listener(message);
-                        if (result && typeof result.then === "function") {
-                            void result.catch(() => { });
-                        }
-                    }
-                    catch {
-                        // isolate
-                    }
-                }
+                void this.dispatchServerRequest(message);
                 return;
             }
             void this.close(new errors_1.CodexAppServerError("malformed", "invalid inbound app-server message", this.sessionId));
@@ -151,17 +165,53 @@ class AbstractAppServerTransport {
             this.inboundQueued -= 1;
         }
     }
-    async replyUnsupported(message) {
-        if (message.id === undefined)
+    async dispatchServerRequest(message) {
+        if (this.closed || message.id === undefined)
             return;
-        try {
-            await this.sendImpl({
-                id: message.id,
-                error: { code: -32601, message: "Method not found" },
+        if (this.serverRequestsInFlight >= this.maxServerRequestsInFlight) {
+            await this.sendServerResponse(message.id, {
+                error: { code: -32000, message: "too many in-flight server requests" },
             });
+            return;
         }
-        catch {
-            void this.close(new errors_1.CodexAppServerError("unsupported", "unhandled server request", this.sessionId));
+        this.serverRequestsInFlight += 1;
+        try {
+            const handler = this.serverRequestHandler;
+            if (!handler) {
+                await this.sendServerResponse(message.id, {
+                    error: { code: -32601, message: "Method not found" },
+                });
+                return;
+            }
+            let outcome;
+            try {
+                outcome = await handler(message);
+            }
+            catch {
+                outcome = { error: { code: -32603, message: "Internal error" } };
+            }
+            if (outcome && typeof outcome === "object" && "error" in outcome && outcome.error) {
+                await this.sendServerResponse(message.id, { error: outcome.error });
+            }
+            else {
+                await this.sendServerResponse(message.id, { result: outcome?.result });
+            }
+        }
+        finally {
+            this.serverRequestsInFlight -= 1;
+        }
+    }
+    async sendServerResponse(id, body) {
+        if (id === undefined || this.closed)
+            return;
+        const message = { id, ...body };
+        try {
+            (0, framing_1.assertOutboundMessage)(message);
+            await this.sendImpl(message);
+        }
+        catch (error) {
+            const wrapped = error instanceof Error ? error : new errors_1.CodexAppServerError("internal", String(error), this.sessionId);
+            void this.close(wrapped);
         }
     }
     assertOpen() {
@@ -172,6 +222,6 @@ class AbstractAppServerTransport {
 }
 exports.AbstractAppServerTransport = AbstractAppServerTransport;
 function encodeForStdio(message) {
-    return `${(0, protocol_1.serializeAppServerMessage)(message)}\n`;
+    return (0, framing_1.assertOutboundMessage)(message);
 }
 //# sourceMappingURL=transport.js.map

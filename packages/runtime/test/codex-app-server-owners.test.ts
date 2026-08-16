@@ -16,6 +16,7 @@ import {
   CodexAppServerError,
   THREAD_OWNER_STORE_VERSION,
   ThreadOwnerStore,
+  isUsableThreadId,
   threadOwnerStorePath,
 } from "../src/codex-app-server";
 
@@ -163,6 +164,21 @@ test("atomic write replaces the store file", () => {
     const parsed = JSON.parse(readFileSync(threadOwnerStorePath(root), "utf8")) as { owners: Record<string, string> };
     assert.equal(Object.keys(parsed.owners).length, 2);
     assert.equal(parsed.owners.thread_one, session);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("owner store rejects actual NUL and control characters in thread ids", () => {
+  const root = tempRoot();
+  try {
+    const store = new ThreadOwnerStore(root);
+    const session = generateSessionId();
+    const withNul = "thread" + String.fromCharCode(0) + "x";
+    const withDel = "thread" + String.fromCharCode(0x7f) + "x";
+    assert.equal(isUsableThreadId(withNul), false);
+    assert.throws(() => store.setOwner(withNul, session), /invalid thread id/);
+    assert.throws(() => store.setOwner(withDel, session), /invalid thread id/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
