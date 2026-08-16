@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, cpSync, existsSync, renameSync, unlinkSync, chmodSync, lstatSync, readdirSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { setImmediate as yieldToEventLoop, setTimeout as delay } from "node:timers/promises";
 
 export interface AsarHeaderInfo {
   /** SHA-256 hex of the header JSON bytes Electron hashes. */
@@ -55,42 +55,78 @@ export function readHeaderHash(asarPath: string): AsarHeaderInfo {
  */
 export function asarHasReadablePackageJson(asarPath: string): boolean {
   try {
-    return asarBufferHasReadablePackageJson(readFileSync(asarPath));
+    return inspectPackedAsar(readFileSync(asarPath)).ok;
   } catch {
     return false;
   }
 }
 
 export function asarBufferHasReadablePackageJson(bytes: Buffer): boolean {
+  return inspectPackedAsar(bytes).ok;
+}
+
+interface PackedAsarInspection {
+  ok: boolean;
+  reason: string;
+}
+
+function inspectPackedAsar(bytes: Buffer): PackedAsarInspection {
   try {
-    if (!bytes || bytes.length === 0) return false;
-    if (bytes[0] === 0) return false;
-    if (bytes.length < 16) return false;
+    if (!bytes || bytes.length === 0) return { ok: false, reason: "empty" };
+    if (bytes[0] === 0) return { ok: false, reason: "leading-nul" };
+    if (bytes.length < 16) return { ok: false, reason: "truncated-header" };
     // Electron asar: 8-byte size pickle (uint32 payload size + uint32 header size).
     const headerPickleSize = bytes.readUInt32LE(4);
-    if (headerPickleSize <= 4 || 8 + headerPickleSize > bytes.length) return false;
+    if (headerPickleSize <= 4 || 8 + headerPickleSize > bytes.length) {
+      return { ok: false, reason: "truncated-header" };
+    }
     const headerPickle = bytes.subarray(8, 8 + headerPickleSize);
     const jsonLength = headerPickle.readInt32LE(4);
-    if (jsonLength <= 0 || 8 + jsonLength > headerPickle.length) return false;
+    if (jsonLength <= 0 || 8 + jsonLength > headerPickle.length) {
+      return { ok: false, reason: "bad-pickle" };
+    }
     const headerJson = headerPickle.subarray(8, 8 + jsonLength).toString("utf8");
-    if (!headerJson || headerJson.includes("\0")) return false;
+    if (!headerJson || headerJson.includes("\0")) return { ok: false, reason: "bad-pickle" };
     const header = JSON.parse(headerJson) as { files?: Record<string, unknown> };
     const entry = findPackedPackageJson(header);
-    if (!entry || entry.size <= 0) return false;
+    if (!entry || entry.size <= 0) return { ok: false, reason: "no-package.json" };
     const dataStart = 8 + headerPickleSize;
     const start = dataStart + entry.offset;
     const end = start + entry.size;
-    if (start < dataStart || end > bytes.length) return false;
+    if (start < dataStart || end > bytes.length) return { ok: false, reason: "truncated-payload" };
     const payload = bytes.subarray(start, end);
-    if (payload.length === 0) return false;
-    if (payload.includes(0)) return false;
+    if (payload.length === 0) return { ok: false, reason: "empty-payload" };
+    if (payload.includes(0)) return { ok: false, reason: "nul-payload" };
     const raw = payload.toString("utf8").trim();
-    if (!raw) return false;
+    if (!raw) return { ok: false, reason: "empty-payload" };
     JSON.parse(raw);
-    return true;
+    return { ok: true, reason: "ok" };
   } catch {
-    return false;
+    return { ok: false, reason: "bad-json" };
   }
+}
+
+/**
+ * @electron/asar createPackage resolves on writable.end(), which does not wait
+ * for the stream 'finish' event. On Windows the file can still be truncated
+ * when that promise resolves. Yield to the event loop until the packed bytes
+ * parse, then fail closed. This is not a createPackage retry and not a sleep.
+ */
+async function waitForReadablePackedAsar(path: string, label: string): Promise<void> {
+  const attempts = 40;
+  let reason = "missing";
+  let size = 0;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try { fsyncPath(path); } catch { /* dest may still be opening */ }
+    let bytes = Buffer.alloc(0);
+    try { bytes = readFileSync(path); } catch { /* not visible yet */ }
+    size = bytes.length;
+    const info = inspectPackedAsar(bytes);
+    reason = info.reason;
+    if (info.ok) return;
+    if (attempt < attempts) await yieldToEventLoop();
+  }
+  throw new Error(`${label} asar is unreadable (${reason}, size=${size})`);
 }
 
 function findPackedPackageJson(node: unknown): { size: number; offset: number } | null {
@@ -185,10 +221,7 @@ export async function patchAsar(
       ...originalUnpackOptions,
     });
     uncacheAsar(outAsar);
-    try { fsyncPath(outAsar); } catch { /* ignore */ }
-    if (!asarHasReadablePackageJson(outAsar)) {
-      throw new Error("packed asar is unreadable");
-    }
+    await waitForReadablePackedAsar(outAsar, "packed");
 
     // Atomic-ish replace: write next to the target, then rename on Unix. This
     // prevents a denied write (e.g. macOS App Management TCC) from leaving the
@@ -203,9 +236,11 @@ export async function patchAsar(
       throw annotatePermError(e, asarPath);
     }
     uncacheAsar(stagingPath);
-    if (!asarHasReadablePackageJson(stagingPath)) {
+    try {
+      await waitForReadablePackedAsar(stagingPath, "staged");
+    } catch (e) {
       try { unlinkSync(stagingPath); } catch { /* dest was not touched */ }
-      throw new Error("staged asar is unreadable");
+      throw e;
     }
     try {
       await replaceAsarAtomically(stagingPath, asarPath, hooks);

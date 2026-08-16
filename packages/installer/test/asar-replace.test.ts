@@ -23,6 +23,7 @@ import {
   patchAsar,
   readFileInAsar,
   replaceAsarAtomically,
+  uncacheAsar,
   type AsarReplaceFs,
 } from "../src/asar";
 
@@ -226,6 +227,7 @@ test("Windows overwrite invalidates the asar cache so extractFile sees new files
       writeFileSync(join(dir, "package.json"), JSON.stringify({ main: "loader.cjs", extra: true }));
       writeFileSync(join(dir, "loader.cjs"), "module.exports = {};\n");
     }, { platform: "win32" });
+    uncacheAsar(archive);
     const after = JSON.parse(readFileInAsar(archive, "package.json").toString("utf8")) as { main?: string; extra?: boolean };
     assert.equal(after.main, "loader.cjs");
     assert.equal(after.extra, true);
