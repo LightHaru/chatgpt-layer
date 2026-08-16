@@ -1,5 +1,5 @@
 import { ipcMain, webContents } from "electron";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { discoverTweaks, type DiscoveredTweak } from "./tweak-discovery";
 import { createDiskStorage, type DiskStorage } from "./storage";
@@ -19,6 +19,7 @@ import {
   windowSampleFrom,
 } from "./codex-runtime-probe";
 import type {
+  CodexApi,
   CodexRuntimeCapabilities,
   CodexRuntimeInfo,
   CodexViewCreateOptions,
@@ -26,8 +27,25 @@ import type {
   NativeModuleLoadOptions,
   NativePanelCreateOptions,
   NativeViewAttachOptions,
+  TweakFs,
+  TweakIpc,
+  TweakManifest,
   TweakPermission,
 } from "@codex-plusplus/sdk";
+import {
+  assertTweakHasPermission,
+  assertValidTweakId,
+  authorizeTweakCapability,
+  createDeniedAsyncMethod,
+  createDeniedTweakFs,
+  createDeniedTweakIpc,
+  hasAnyCodexApi,
+  hasTweakPermission,
+  scopedTweakIpcChannel,
+  tweakApiSurface,
+  type TweakIdentitySnapshot,
+} from "./tweak-permissions";
+import { ensureTweakDataDir, resolveTweakDataPath } from "./tweak-fs-sandbox";
 import {
   isTweakEnabled,
   readInstallerState,
@@ -113,8 +131,8 @@ export function loadAllMainTweaks(): void {
           process: "main",
           log: makeLogger(t.manifest.id),
           storage,
-          ipc: makeMainIpc(t.manifest.id),
-          fs: makeMainFs(t.manifest.id),
+          ipc: makeMainIpc(t.manifest),
+          fs: makeMainFs(t.manifest),
           codex: makeCodexApi(t),
         });
         tweakState.loadedMain.set(t.manifest.id, {
@@ -331,8 +349,10 @@ export function makeLogger(scope: string) {
   };
 }
 
-export function makeMainIpc(id: string) {
-  const ch = (c: string) => `codexpp:${id}:${c}`;
+export function makeMainIpc(manifest: TweakManifest): TweakIpc {
+  if (!hasTweakPermission(manifest, "ipc")) return createDeniedTweakIpc(manifest.id);
+  const id = manifest.id;
+  const ch = (c: string) => scopedTweakIpcChannel(id, c);
   return {
     on: (c: string, h: (...args: unknown[]) => void) => {
       const wrapped = (_e: unknown, ...args: unknown[]) => h(...args);
@@ -351,17 +371,18 @@ export function makeMainIpc(id: string) {
   };
 }
 
-export function makeMainFs(id: string) {
-  const dir = join(userRoot!, "tweak-data", id);
-  mkdirSync(dir, { recursive: true });
+export function makeMainFs(manifest: TweakManifest): TweakFs {
+  if (!hasTweakPermission(manifest, "filesystem")) return createDeniedTweakFs(manifest.id);
+  const id = manifest.id;
+  const dir = ensureTweakDataDir(userRoot!, id);
   const fs = require("node:fs/promises") as typeof import("node:fs/promises");
   return {
     dataDir: dir,
-    read: (p: string) => fs.readFile(join(dir, p), "utf8"),
-    write: (p: string, c: string) => fs.writeFile(join(dir, p), c, "utf8"),
+    read: (p: string) => fs.readFile(resolveTweakDataPath(userRoot!, id, p).full, "utf8"),
+    write: (p: string, c: string) => fs.writeFile(resolveTweakDataPath(userRoot!, id, p).full, c, "utf8"),
     exists: async (p: string) => {
       try {
-        await fs.access(join(dir, p));
+        await fs.access(resolveTweakDataPath(userRoot!, id, p).full);
         return true;
       } catch {
         return false;
@@ -403,93 +424,131 @@ function liveProbeEnv() {
 
 export function tweakContext(tweakId: string, permission?: TweakPermission): NativeTweakContext {
   const tweak = permission
-    ? assertTweakPermissionForId(tweakId, permission)
+    ? assertAuthorizedTweak(tweakId, permission)
     : tweakById(tweakId);
   return { id: tweak.manifest.id, dir: tweak.dir };
 }
 
-export function tweakById(tweakId: string): DiscoveredTweak {
-  assertTweakId(tweakId);
+export function discoveredTweakSnapshot(tweakId: string): TweakIdentitySnapshot | undefined {
   const tweak = tweakState.discovered.find((item) => item.manifest.id === tweakId);
+  if (!tweak) return undefined;
+  return {
+    id: tweak.manifest.id,
+    enabled: isTweakEnabled(tweak.manifest.id),
+    dir: tweak.dir,
+    manifest: tweak.manifest,
+  };
+}
+
+export function tweakById(tweakId: string): DiscoveredTweak {
+  const snapshot = authorizeEnabledTweak(tweakId);
+  const tweak = tweakState.discovered.find((item) => item.manifest.id === snapshot.id);
   if (!tweak) throw new Error(`unknown tweak: ${tweakId}`);
-  if (!isTweakEnabled(tweakId)) throw new Error(`tweak is disabled: ${tweakId}`);
   return tweak;
 }
 
+export function authorizeEnabledTweak(tweakId: unknown): TweakIdentitySnapshot {
+  assertValidTweakId(tweakId);
+  const snapshot = discoveredTweakSnapshot(tweakId);
+  if (!snapshot) throw new Error(`unknown tweak: ${tweakId}`);
+  if (!snapshot.enabled) throw new Error(`tweak is disabled: ${tweakId}`);
+  return snapshot;
+}
+
+export function assertAuthorizedTweak(
+  tweakId: unknown,
+  permission: TweakPermission,
+  ownerId?: string,
+): DiscoveredTweak {
+  const snapshot = authorizeTweakCapability(
+    typeof tweakId === "string" ? discoveredTweakSnapshot(tweakId) : undefined,
+    tweakId,
+    permission,
+    ownerId,
+  );
+  const tweak = tweakState.discovered.find((item) => item.manifest.id === snapshot.id);
+  if (!tweak) throw new Error(`unknown tweak: ${String(tweakId)}`);
+  return tweak;
+}
+
+/** @deprecated Use assertAuthorizedTweak */
 export function assertTweakPermissionForId(tweakId: string, permission: TweakPermission): DiscoveredTweak {
-  const tweak = tweakById(tweakId);
-  assertTweakPermission(tweak, permission);
-  return tweak;
+  return assertAuthorizedTweak(tweakId, permission);
 }
 
+/** @deprecated Use assertAuthorizedTweak(tweakId, "codex-views") */
 export function assertTweakViewPermissionForId(tweakId: string): DiscoveredTweak {
-  const tweak = tweakById(tweakId);
-  assertTweakViewPermission(tweak);
-  return tweak;
+  return assertAuthorizedTweak(tweakId, "codex-views");
 }
 
 export function assertTweakPermission(tweak: DiscoveredTweak, permission: TweakPermission): void {
-  if (tweak.manifest.permissions?.includes(permission)) return;
-  throw new Error(`tweak ${tweak.manifest.id} must declare ${permission} permission`);
+  assertTweakHasPermission(tweak.manifest, permission);
 }
 
 export function assertTweakViewPermission(tweak: DiscoveredTweak): void {
-  if (
-    tweak.manifest.permissions?.includes("codex-views") ||
-    tweak.manifest.permissions?.includes("codex.views")
-  ) {
-    return;
-  }
-  throw new Error(`tweak ${tweak.manifest.id} must declare codex-views permission`);
+  assertTweakHasPermission(tweak.manifest, "codex-views");
 }
 
 export function assertTweakId(tweakId: string): void {
-  if (!/^[a-zA-Z0-9._-]+$/.test(tweakId)) throw new Error("bad tweak id");
+  assertValidTweakId(tweakId);
 }
 
-export function makeCodexApi(tweak: DiscoveredTweak) {
+export function makeCodexApi(tweak: DiscoveredTweak): CodexApi | undefined {
+  const surface = tweakApiSurface(tweak.manifest);
+  if (!hasAnyCodexApi(surface)) return undefined;
   const ctx = (): NativeTweakContext => ({ id: tweak.manifest.id, dir: tweak.dir });
+  const deny = (permission: TweakPermission) => createDeniedAsyncMethod(tweak.manifest.id, permission);
+  const guard = <A extends unknown[], R>(
+    permission: TweakPermission,
+    fn: (...args: A) => R | Promise<R>,
+  ): ((...args: A) => Promise<R>) => {
+    return async (...args: A) => {
+      assertTweakHasPermission(tweak.manifest, permission);
+      return await fn(...args);
+    };
+  };
   return {
     runtime: {
-      getInfo: async () => currentRuntimeInfo(),
-      getCapabilities: async () => currentRuntimeCapabilities(),
+      getInfo: surface.codexRuntime ? async () => currentRuntimeInfo() : deny("codex-runtime"),
+      getCapabilities: surface.codexRuntime ? async () => currentRuntimeCapabilities() : deny("codex-runtime"),
     },
     windows: {
-      create: createCodexWindow,
-      getPrimary: async () => getPrimaryCodexWindowRef(),
-      focus: async (windowId: number) => focusCodexWindow(windowId),
-      show: async (windowId: number) => showCodexWindow(windowId),
+      create: surface.codexWindows ? guard("codex-windows", createCodexWindow) : deny("codex-windows"),
+      getPrimary: surface.codexWindows ? async () => getPrimaryCodexWindowRef() : deny("codex-windows"),
+      focus: surface.codexWindows
+        ? guard("codex-windows", async (windowId: number) => focusCodexWindow(windowId))
+        : deny("codex-windows"),
+      show: surface.codexWindows
+        ? guard("codex-windows", async (windowId: number) => showCodexWindow(windowId))
+        : deny("codex-windows"),
     },
     views: {
-      create: async (options: CodexViewCreateOptions) => {
-        assertTweakViewPermission(tweak);
-        return createOwlView(ctx(), options);
-      },
+      create: surface.codexViews
+        ? guard("codex-views", (options: CodexViewCreateOptions) => createOwlView(ctx(), options))
+        : deny("codex-views"),
     },
     cdp: {
-      getStatus: async () => getCdpStatus(),
-      listTargets: async () => listCdpTargets(),
+      getStatus: surface.codexCdp ? async () => getCdpStatus() : deny("codex-cdp"),
+      listTargets: surface.codexCdp ? async () => listCdpTargets() : deny("codex-cdp"),
     },
     native: {
-      loadModule: async (options: NativeModuleLoadOptions) => {
-        assertTweakPermission(tweak, "native-module");
-        return nativeBridge.loadModule(ctx(), options);
-      },
-      createPanel: async (options: NativePanelCreateOptions) => {
-        assertTweakPermission(tweak, "native-view");
-        return nativeBridge.createPanel(ctx(), options);
-      },
-      attachView: async (options: NativeViewAttachOptions) => {
-        assertTweakPermission(tweak, "native-view");
-        return nativeBridge.attachView(ctx(), options);
-      },
-      launchHelper: async (options: NativeHelperLaunchOptions) => {
-        assertTweakPermission(tweak, "native-helper");
-        return nativeBridge.launchHelper(ctx(), options);
-      },
+      loadModule: surface.nativeModule
+        ? guard("native-module", async (options: NativeModuleLoadOptions) => nativeBridge.loadModule(ctx(), options))
+        : deny("native-module"),
+      createPanel: surface.nativeView
+        ? guard("native-view", (options: NativePanelCreateOptions) => nativeBridge.createPanel(ctx(), options))
+        : deny("native-view"),
+      attachView: surface.nativeView
+        ? guard("native-view", (options: NativeViewAttachOptions) => nativeBridge.attachView(ctx(), options))
+        : deny("native-view"),
+      launchHelper: surface.nativeHelper
+        ? guard("native-helper", async (options: NativeHelperLaunchOptions) => nativeBridge.launchHelper(ctx(), options))
+        : deny("native-helper"),
     },
-    createBrowserView: createCodexBrowserView,
-    createWindow: createCodexWindow,
+    createBrowserView: surface.codexViews
+      ? guard("codex-views", createCodexBrowserView)
+      : deny("codex-views"),
+    createWindow: surface.codexWindows ? guard("codex-windows", createCodexWindow) : deny("codex-windows"),
   };
 }
 

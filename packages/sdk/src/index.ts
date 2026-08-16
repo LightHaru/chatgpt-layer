@@ -46,7 +46,12 @@ export interface TweakManifest {
    * MCP config so tweak-provided tools can be used from chat.
    */
   mcp?: TweakMcpServer;
-  /** Optional declared capabilities shown to users and validators. */
+  /**
+   * Optional declared capabilities. Absent keeps legacy API behavior. When
+   * present, the list is enforced strictly. An empty list grants no optional
+   * capabilities. Historical aliases `codex.windows` / `codex.views` are
+   * equivalent to `codex-windows` / `codex-views`.
+   */
   permissions?: TweakPermission[];
 }
 

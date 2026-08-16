@@ -26,7 +26,7 @@ runtime compatibility.
 | `scope` | `"renderer"`, `"main"`, or `"both"` | Set this explicitly. If omitted, current runtime behavior is effectively `both`. |
 | `main` | `string` | Entry file relative to the tweak directory. |
 | `mcp` | `TweakMcpServer` | Declares an MCP server managed by Codex++. |
-| `permissions` | `TweakPermission[]` | Declared capabilities shown to users/validators. Native bridge permissions are enforced at runtime. |
+| `permissions` | `TweakPermission[]` | Optional capability list. Absent = legacy (existing APIs keep working). Present = strictly enforced. `[]` grants no optional capabilities. |
 
 ## Full Example
 
@@ -72,34 +72,34 @@ and the renderer loader skips only `"main"`.
 
 ## Permissions
 
-Valid permission strings:
+Policy:
 
-| Permission | Meaning |
-|---|---|
-| `settings` | Adds settings sections/pages or user-facing UI. |
-| `ipc` | Uses renderer/main IPC. |
-| `filesystem` | Reads/writes tweak data or user-selected files. |
-| `network` | Makes network requests. |
-| `codex-runtime` | Reads Codex runtime info/capabilities. |
-| `codex-windows` | Uses namespaced Codex window APIs. |
-| `codex-views` | Creates Owl `WebContentsView` / `BrowserView` overlays. |
-| `codex-cdp` | Reads CDP status or target metadata when CDP is enabled. |
-| `codex.windows` | Opens Codex-native windows. |
-| `codex.views` | Legacy alias for embedded Codex/Owl views. |
-| `native-module` | Loads tweak-owned in-process native modules. |
-| `native-view` | Creates AppKit/Metal native panels or views. |
-| `native-helper` | Launches tweak-owned native helper processes. |
+1. Field omitted: legacy compatibility. Existing APIs keep working.
+2. Field present: only the declared list is authorized.
+3. `[]`: explicitly no optional capabilities. This is not legacy.
 
-Permissions are declarations for review and user visibility. Native bridge
-permissions and Owl view permissions are also enforced at runtime:
+Declare only the capabilities the tweak uses. Historical aliases `codex.windows`
+and `codex.views` are equivalent to `codex-windows` and `codex-views`.
 
-- `codex-views` or `codex.views` is required for `api.codex.views.create()`.
-- `native-module` is required for `api.codex.native.loadModule()` and module
-  requests.
-- `native-view` is required for `api.codex.native.createPanel()`,
-  `api.codex.native.attachView()`, and native panel/view calls.
-- `native-helper` is required for `api.codex.native.launchHelper()` and helper
-  calls.
+| Permission | API | Enforcement |
+|---|---|---|
+| `settings` | `api.settings` | Enforced (API omitted when undeclared). |
+| `ipc` | `api.ipc` | Enforced through the tweak API. Layer internal IPC is unchanged. |
+| `filesystem` | `api.fs` | Enforced. Bound to the owning tweak under `tweak-data/<id>/`. |
+| `codex-runtime` | `api.codex.runtime` | Enforced. |
+| `codex-windows` / `codex.windows` | `api.codex.windows` and `createWindow` | Enforced. |
+| `codex-views` / `codex.views` | `api.codex.views` and `createBrowserView` | Enforced. |
+| `codex-cdp` | `api.codex.cdp` | Enforced. |
+| `native-module` | `loadModule` / `request` / `dispose` | Enforced. |
+| `native-view` | `createPanel` / `attachView` / instance calls | Enforced. |
+| `native-helper` | `launchHelper` / helper calls | Enforced. |
+| `network` | outbound web requests | Declarative only. Preload cannot block `fetch`. |
+
+Main-process IPC authorizes when a tweak identity is present. Renderer filtering
+is defense-in-depth. Errors look like
+`tweak com.example.foo must declare filesystem permission`.
+
+This is capability authorization, not a process sandbox.
 
 Local/dev tweaks may load unsigned native code from their own directory when
 the permission is declared. Codex++ resolves the real target path and rejects

@@ -9,7 +9,7 @@
  */
 
 import { app, clipboard, ipcMain, session, shell } from "electron";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import chokidar from "chokidar";
 import { appendCappedLog } from "./logging";
@@ -85,9 +85,8 @@ import {
   type CodexCreateWindowOptions,
 } from "./codex-windows";
 import {
+  assertAuthorizedTweak,
   assertTweakId,
-  assertTweakPermissionForId,
-  assertTweakViewPermissionForId,
   currentRuntimeCapabilities,
   currentRuntimeInfo,
   ensureTweakUpdateCheck,
@@ -100,6 +99,7 @@ import {
   tweakLifecycleDeps,
   tweakState,
 } from "./tweak-main-host";
+import { ensureTweakDataDir, resolveTweakDataPath } from "./tweak-fs-sandbox";
 import type {
   CodexViewCreateOptions,
   NativeHelperLaunchOptions,
@@ -426,17 +426,15 @@ ipcMain.on("codexpp:preload-log", (_e, level: "info" | "warn" | "error", msg: st
 // a sandboxed dir under userRoot/tweak-data/<id>. Renderer side calls these
 // over IPC instead of using Node fs directly.
 privilegedHandle("codexpp:tweak-fs", (_e, op: string, id: string, p: string, c?: string) => {
-  if (!/^[a-zA-Z0-9._-]+$/.test(id)) throw new Error("bad tweak id");
-  const dir = join(userRoot!, "tweak-data", id);
-  mkdirSync(dir, { recursive: true });
-  const full = resolve(dir, p);
-  if (!isPathInside(dir, full) || full === dir) throw new Error("path traversal");
+  const tweak = assertAuthorizedTweak(id, "filesystem");
+  const dir = ensureTweakDataDir(userRoot!, tweak.manifest.id);
   const fs = require("node:fs") as typeof import("node:fs");
+  if (op === "dataDir") return dir;
+  const { full } = resolveTweakDataPath(userRoot!, tweak.manifest.id, p);
   switch (op) {
     case "read": return fs.readFileSync(full, "utf8");
     case "write": return fs.writeFileSync(full, c ?? "", "utf8");
     case "exists": return fs.existsSync(full);
-    case "dataDir": return dir;
     default: throw new Error(`unknown op: ${op}`);
   }
 });
@@ -448,19 +446,41 @@ ipcMain.handle("codexpp:user-paths", () => ({
   logDir: LOG_DIR,
 }));
 
-ipcMain.handle("codexpp:codex-runtime-info", () => currentRuntimeInfo());
-ipcMain.handle("codexpp:codex-runtime-capabilities", () => currentRuntimeCapabilities());
-ipcMain.handle("codexpp:codex-cdp-status", () => getCdpStatus());
-ipcMain.handle("codexpp:codex-cdp-targets", () => listCdpTargets());
-privilegedHandle("codexpp:codex-window-create", (_e, opts: CodexCreateWindowOptions) => {
+ipcMain.handle("codexpp:codex-runtime-info", (_e, tweakId: string) => {
+  assertAuthorizedTweak(tweakId, "codex-runtime");
+  return currentRuntimeInfo();
+});
+ipcMain.handle("codexpp:codex-runtime-capabilities", (_e, tweakId: string) => {
+  assertAuthorizedTweak(tweakId, "codex-runtime");
+  return currentRuntimeCapabilities();
+});
+ipcMain.handle("codexpp:codex-cdp-status", (_e, tweakId: string) => {
+  assertAuthorizedTweak(tweakId, "codex-cdp");
+  return getCdpStatus();
+});
+ipcMain.handle("codexpp:codex-cdp-targets", (_e, tweakId: string) => {
+  assertAuthorizedTweak(tweakId, "codex-cdp");
+  return listCdpTargets();
+});
+privilegedHandle("codexpp:codex-window-create", (_e, tweakId: string, opts: CodexCreateWindowOptions) => {
+  assertAuthorizedTweak(tweakId, "codex-windows");
   return createCodexWindow(opts);
 });
-ipcMain.handle("codexpp:codex-window-primary", () => getPrimaryCodexWindowRef());
-ipcMain.handle("codexpp:codex-window-focus", (_e, windowId: number) => focusCodexWindow(windowId));
-ipcMain.handle("codexpp:codex-window-show", (_e, windowId: number) => showCodexWindow(windowId));
+privilegedHandle("codexpp:codex-window-primary", (_e, tweakId: string) => {
+  assertAuthorizedTweak(tweakId, "codex-windows");
+  return getPrimaryCodexWindowRef();
+});
+privilegedHandle("codexpp:codex-window-focus", (_e, tweakId: string, windowId: number) => {
+  assertAuthorizedTweak(tweakId, "codex-windows");
+  return focusCodexWindow(windowId);
+});
+privilegedHandle("codexpp:codex-window-show", (_e, tweakId: string, windowId: number) => {
+  assertAuthorizedTweak(tweakId, "codex-windows");
+  return showCodexWindow(windowId);
+});
 privilegedHandle("codexpp:codex-view-create",
   async (_e, tweakId: string, options: CodexViewCreateOptions) => {
-    const tweak = assertTweakViewPermissionForId(tweakId);
+    const tweak = assertAuthorizedTweak(tweakId, "codex-views");
     const ref = await createOwlView({ id: tweak.manifest.id, dir: tweak.dir }, options);
     return {
       id: ref.id,
@@ -471,8 +491,8 @@ privilegedHandle("codexpp:codex-view-create",
 );
 privilegedHandle("codexpp:codex-view-call",
   (_e, tweakId: string, viewId: string, method: string, arg?: unknown, arg2?: unknown) => {
-    assertTweakViewPermissionForId(tweakId);
-    return callOwlView(tweakId, viewId, method, arg, arg2);
+    const tweak = assertAuthorizedTweak(tweakId, "codex-views");
+    return callOwlView(tweak.manifest.id, viewId, method, arg, arg2);
   },
 );
 ipcMain.handle("codexpp:codex-view-dispose-tweak", (_e, tweakId: string) => {
@@ -481,19 +501,20 @@ ipcMain.handle("codexpp:codex-view-dispose-tweak", (_e, tweakId: string) => {
 });
 privilegedHandle("codexpp:native-load-module",
   (_e, tweakId: string, options: NativeModuleLoadOptions) => {
-    const ref = nativeBridge.loadModule(tweakContext(tweakId, "native-module"), options);
+    const tweak = assertAuthorizedTweak(tweakId, "native-module");
+    const ref = nativeBridge.loadModule(tweakContext(tweak.manifest.id, "native-module"), options);
     return { id: ref.id, kind: ref.kind };
   },
 );
 privilegedHandle("codexpp:native-module-request",
   (_e, tweakId: string, moduleId: string, method: string, payload?: unknown, timeoutMs?: number) => {
-    assertTweakPermissionForId(tweakId, "native-module");
-    return nativeBridge.requestModule(tweakId, moduleId, method, payload, timeoutMs);
+    const tweak = assertAuthorizedTweak(tweakId, "native-module");
+    return nativeBridge.requestModule(tweak.manifest.id, moduleId, method, payload, timeoutMs);
   },
 );
 privilegedHandle("codexpp:native-module-dispose", (_e, tweakId: string, moduleId: string) => {
-  assertTweakPermissionForId(tweakId, "native-module");
-  return nativeBridge.disposeModule(tweakId, moduleId);
+  const tweak = assertAuthorizedTweak(tweakId, "native-module");
+  return nativeBridge.disposeModule(tweak.manifest.id, moduleId);
 });
 ipcMain.handle("codexpp:native-dispose-tweak", (_e, tweakId: string) => {
   assertTweakId(tweakId);
@@ -501,32 +522,35 @@ ipcMain.handle("codexpp:native-dispose-tweak", (_e, tweakId: string) => {
 });
 privilegedHandle("codexpp:native-create-panel",
   async (_e, tweakId: string, options: NativePanelCreateOptions) => {
-    const ref = await nativeBridge.createPanel(tweakContext(tweakId, "native-view"), options);
+    const tweak = assertAuthorizedTweak(tweakId, "native-view");
+    const ref = await nativeBridge.createPanel(tweakContext(tweak.manifest.id, "native-view"), options);
     return { id: ref.id, windowId: ref.windowId };
   },
 );
 privilegedHandle("codexpp:native-attach-view",
   async (_e, tweakId: string, options: NativeViewAttachOptions) => {
-    const ref = await nativeBridge.attachView(tweakContext(tweakId, "native-view"), options);
+    const tweak = assertAuthorizedTweak(tweakId, "native-view");
+    const ref = await nativeBridge.attachView(tweakContext(tweak.manifest.id, "native-view"), options);
     return { id: ref.id };
   },
 );
 privilegedHandle("codexpp:native-instance-call",
   async (_e, tweakId: string, kind: "panel" | "view", instanceId: string, method: string, arg?: unknown) => {
-    assertTweakPermissionForId(tweakId, "native-view");
-    return nativeBridge.callInstance(tweakId, kind, instanceId, method, arg);
+    const tweak = assertAuthorizedTweak(tweakId, "native-view");
+    return nativeBridge.callInstance(tweak.manifest.id, kind, instanceId, method, arg);
   },
 );
 privilegedHandle("codexpp:native-launch-helper",
   (_e, tweakId: string, options: NativeHelperLaunchOptions) => {
-    const ref = nativeBridge.launchHelper(tweakContext(tweakId, "native-helper"), options);
+    const tweak = assertAuthorizedTweak(tweakId, "native-helper");
+    const ref = nativeBridge.launchHelper(tweakContext(tweak.manifest.id, "native-helper"), options);
     return { id: ref.id, pid: ref.pid };
   },
 );
 privilegedHandle("codexpp:native-helper-call",
   (_e, tweakId: string, helperId: string, method: string, payload?: unknown, timeoutMs?: number) => {
-    assertTweakPermissionForId(tweakId, "native-helper");
-    return nativeBridge.callHelper(tweakId, helperId, method, payload, timeoutMs);
+    const tweak = assertAuthorizedTweak(tweakId, "native-helper");
+    return nativeBridge.callHelper(tweak.manifest.id, helperId, method, payload, timeoutMs);
   },
 );
 

@@ -36,6 +36,16 @@ import type {
   ReactFiberNode,
   Tweak,
 } from "@codex-plusplus/sdk";
+import {
+  createBoundTweakFs,
+  createBoundTweakIpc,
+  createDeniedAsyncMethod,
+  createDeniedTweakFs,
+  createDeniedTweakIpc,
+  planTweakApi,
+  tweakApiSurface,
+  type TweakIpcBridge,
+} from "../tweak-permissions";
 
 interface ListedTweak {
   manifest: TweakManifest;
@@ -160,8 +170,22 @@ async function loadTweak(t: ListedTweak, paths: UserPaths): Promise<void> {
   loaded.set(t.manifest.id, { stop: tweak.stop?.bind(tweak) });
 }
 
-function makeRendererApi(manifest: TweakManifest, paths: UserPaths): TweakApi {
+function rendererIpcBridge(): TweakIpcBridge {
+  return {
+    on: (channel, listener) => {
+      ipcRenderer.on(channel, listener as never);
+    },
+    removeListener: (channel, listener) => {
+      ipcRenderer.removeListener(channel, listener as never);
+    },
+    send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+    invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  };
+}
+
+function makeRendererApi(manifest: TweakManifest, _paths: UserPaths): TweakApi {
   const id = manifest.id;
+  const plan = planTweakApi(manifest);
   const log = (level: "debug" | "info" | "warn" | "error", ...a: unknown[]) => {
     const consoleFn =
       level === "debug" ? console.debug
@@ -187,7 +211,7 @@ function makeRendererApi(manifest: TweakManifest, paths: UserPaths): TweakApi {
     }
   };
 
-  return {
+  const api: TweakApi = {
     manifest,
     process: "renderer",
     log: {
@@ -197,11 +221,6 @@ function makeRendererApi(manifest: TweakManifest, paths: UserPaths): TweakApi {
       error: (...a) => log("error", ...a),
     },
     storage: rendererStorage(id),
-    settings: {
-      register: (s) => registerSection({ ...s, id: `${id}:${s.id}` }),
-      registerPage: (p) =>
-        registerPage(id, manifest, { ...p, id: `${id}:${p.id}` }),
-    },
     react: {
       getFiber: (n) => fiberForNode(n) as ReactFiberNode | null,
       findOwnerByName: (n, name) => {
@@ -231,101 +250,130 @@ function makeRendererApi(manifest: TweakManifest, paths: UserPaths): TweakApi {
           obs.observe(document.documentElement, { childList: true, subtree: true });
         }),
     },
-    ipc: {
-      on: (c, h) => {
-        const wrapped = (_e: unknown, ...args: unknown[]) => h(...args);
-        ipcRenderer.on(`codexpp:${id}:${c}`, wrapped);
-        return () => ipcRenderer.removeListener(`codexpp:${id}:${c}`, wrapped);
-      },
-      send: (c, ...args) => ipcRenderer.send(`codexpp:${id}:${c}`, ...args),
-      invoke: <T>(c: string, ...args: unknown[]) =>
-        ipcRenderer.invoke(`codexpp:${id}:${c}`, ...args) as Promise<T>,
-    },
-    fs: rendererFs(id, paths),
-    codex: rendererCodexApi(id),
+    ipc: plan.ipc === "present" ? createBoundTweakIpc(id, rendererIpcBridge()) : createDeniedTweakIpc(id),
+    fs: plan.fs === "present"
+      ? createBoundTweakFs(id, (channel, ...args) => ipcRenderer.invoke(channel, ...args))
+      : createDeniedTweakFs(id),
   };
+  if (plan.settings === "present") {
+    api.settings = {
+      register: (s) => registerSection({ ...s, id: `${id}:${s.id}` }),
+      registerPage: (p) => registerPage(id, manifest, { ...p, id: `${id}:${p.id}` }),
+    };
+  }
+  if (plan.codex === "present") {
+    api.codex = rendererCodexApi(id, manifest);
+  }
+  return api;
 }
 
-function rendererCodexApi(tweakId: string): NonNullable<TweakApi["codex"]> {
+function rendererCodexApi(tweakId: string, manifest: TweakManifest): NonNullable<TweakApi["codex"]> {
+  const surface = tweakApiSurface(manifest);
+  const deny = (permission: Parameters<typeof createDeniedAsyncMethod>[1]) =>
+    createDeniedAsyncMethod(tweakId, permission);
   return {
     runtime: {
-      getInfo: async () => {
-        const info = await ipcRenderer.invoke("codexpp:codex-runtime-info") as CodexRuntimeInfo;
-        const bridge = rendererElectronBridge();
-        return {
-          ...info,
-          buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
-          usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
-        };
-      },
-      getCapabilities: () =>
-        ipcRenderer.invoke("codexpp:codex-runtime-capabilities") as Promise<CodexRuntimeCapabilities>,
+      getInfo: surface.codexRuntime
+        ? async () => {
+            const info = await ipcRenderer.invoke("codexpp:codex-runtime-info", tweakId) as CodexRuntimeInfo;
+            const bridge = rendererElectronBridge();
+            return {
+              ...info,
+              buildFlavor: bridge?.getBuildFlavor?.() ?? info.buildFlavor,
+              usesOwlAppShell: bridge?.usesOwlAppShell?.() ?? info.usesOwlAppShell,
+            };
+          }
+        : deny("codex-runtime"),
+      getCapabilities: surface.codexRuntime
+        ? () => ipcRenderer.invoke("codexpp:codex-runtime-capabilities", tweakId) as Promise<CodexRuntimeCapabilities>
+        : deny("codex-runtime"),
     },
     windows: {
-      create: (options) =>
-        ipcRenderer.invoke("codexpp:codex-window-create", options) as Promise<CodexWindowRef>,
-      getPrimary: () =>
-        ipcRenderer.invoke("codexpp:codex-window-primary") as Promise<CodexWindowRef | null>,
-      focus: (windowId) =>
-        ipcRenderer.invoke("codexpp:codex-window-focus", windowId) as Promise<boolean>,
-      show: (windowId) =>
-        ipcRenderer.invoke("codexpp:codex-window-show", windowId) as Promise<boolean>,
+      create: surface.codexWindows
+        ? (options) =>
+            ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options) as Promise<CodexWindowRef>
+        : deny("codex-windows"),
+      getPrimary: surface.codexWindows
+        ? () => ipcRenderer.invoke("codexpp:codex-window-primary", tweakId) as Promise<CodexWindowRef | null>
+        : deny("codex-windows"),
+      focus: surface.codexWindows
+        ? (windowId) => ipcRenderer.invoke("codexpp:codex-window-focus", tweakId, windowId) as Promise<boolean>
+        : deny("codex-windows"),
+      show: surface.codexWindows
+        ? (windowId) => ipcRenderer.invoke("codexpp:codex-window-show", tweakId, windowId) as Promise<boolean>
+        : deny("codex-windows"),
     },
     views: {
-      create: async (options) => {
-        const ref = await ipcRenderer.invoke(
-          "codexpp:codex-view-create",
-          tweakId,
-          options,
-        ) as { id: string; webContentsId: number; parentWindowId: number | null };
-        return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
-      },
+      create: surface.codexViews
+        ? async (options) => {
+            const ref = await ipcRenderer.invoke(
+              "codexpp:codex-view-create",
+              tweakId,
+              options,
+            ) as { id: string; webContentsId: number; parentWindowId: number | null };
+            return rendererCodexViewRef(tweakId, ref.id, ref.webContentsId, ref.parentWindowId);
+          }
+        : deny("codex-views"),
     },
     cdp: {
-      getStatus: () =>
-        ipcRenderer.invoke("codexpp:codex-cdp-status") as Promise<CodexCdpStatus>,
-      listTargets: () =>
-        ipcRenderer.invoke("codexpp:codex-cdp-targets") as Promise<CodexCdpTarget[]>,
+      getStatus: surface.codexCdp
+        ? () => ipcRenderer.invoke("codexpp:codex-cdp-status", tweakId) as Promise<CodexCdpStatus>
+        : deny("codex-cdp"),
+      listTargets: surface.codexCdp
+        ? () => ipcRenderer.invoke("codexpp:codex-cdp-targets", tweakId) as Promise<CodexCdpTarget[]>
+        : deny("codex-cdp"),
     },
     native: {
-      loadModule: async (options) => {
-        const ref = await ipcRenderer.invoke(
-          "codexpp:native-load-module",
-          tweakId,
-          options,
-        ) as { id: string; kind: NativeModuleKind };
-        return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
-      },
-      createPanel: async (options) => {
-        const ref = await ipcRenderer.invoke(
-          "codexpp:native-create-panel",
-          tweakId,
-          options,
-        ) as { id: string; windowId: number | null };
-        return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
-      },
-      attachView: async (options) => {
-        const ref = await ipcRenderer.invoke(
-          "codexpp:native-attach-view",
-          tweakId,
-          options,
-        ) as { id: string };
-        return rendererNativeViewRef(tweakId, ref.id);
-      },
-      launchHelper: async (options) => {
-        const ref = await ipcRenderer.invoke(
-          "codexpp:native-launch-helper",
-          tweakId,
-          options,
-        ) as { id: string; pid: number };
-        return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
-      },
+      loadModule: surface.nativeModule
+        ? async (options) => {
+            const ref = await ipcRenderer.invoke(
+              "codexpp:native-load-module",
+              tweakId,
+              options,
+            ) as { id: string; kind: NativeModuleKind };
+            return rendererNativeModuleRef(tweakId, ref.id, ref.kind);
+          }
+        : deny("native-module"),
+      createPanel: surface.nativeView
+        ? async (options) => {
+            const ref = await ipcRenderer.invoke(
+              "codexpp:native-create-panel",
+              tweakId,
+              options,
+            ) as { id: string; windowId: number | null };
+            return rendererNativePanelRef(tweakId, ref.id, ref.windowId);
+          }
+        : deny("native-view"),
+      attachView: surface.nativeView
+        ? async (options) => {
+            const ref = await ipcRenderer.invoke(
+              "codexpp:native-attach-view",
+              tweakId,
+              options,
+            ) as { id: string };
+            return rendererNativeViewRef(tweakId, ref.id);
+          }
+        : deny("native-view"),
+      launchHelper: surface.nativeHelper
+        ? async (options) => {
+            const ref = await ipcRenderer.invoke(
+              "codexpp:native-launch-helper",
+              tweakId,
+              options,
+            ) as { id: string; pid: number };
+            return rendererNativeHelperRef(tweakId, ref.id, ref.pid);
+          }
+        : deny("native-helper"),
     },
-    createBrowserView: (_options) => {
-      throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
-    },
-    createWindow: (options) =>
-      ipcRenderer.invoke("codexpp:codex-window-create", options) as Promise<CodexWindowRef>,
+    createBrowserView: surface.codexViews
+      ? (_options) => {
+          throw new Error("api.codex.createBrowserView is main-only; use a main-scoped tweak");
+        }
+      : deny("codex-views"),
+    createWindow: surface.codexWindows
+      ? (options) =>
+          ipcRenderer.invoke("codexpp:codex-window-create", tweakId, options) as Promise<CodexWindowRef>
+      : deny("codex-windows"),
   };
 }
 
@@ -455,15 +503,3 @@ function rendererStorage(id: string) {
   };
 }
 
-function rendererFs(id: string, _paths: UserPaths) {
-  // Sandboxed renderer can't use Node fs directly — proxy through main IPC.
-  return {
-    dataDir: `<remote>/tweak-data/${id}`,
-    read: (p: string) =>
-      ipcRenderer.invoke("codexpp:tweak-fs", "read", id, p) as Promise<string>,
-    write: (p: string, c: string) =>
-      ipcRenderer.invoke("codexpp:tweak-fs", "write", id, p, c) as Promise<void>,
-    exists: (p: string) =>
-      ipcRenderer.invoke("codexpp:tweak-fs", "exists", id, p) as Promise<boolean>,
-  };
-}

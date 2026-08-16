@@ -5,7 +5,9 @@ The bridge is main-process backed and never exposes raw Owl objects to tweaks.
 
 ## Permissions
 
-Declare the permissions you use:
+Declare only the native capabilities you use. If `permissions` is omitted, these
+APIs stay available for legacy tweaks. If the field is present, undeclared
+native APIs are denied.
 
 ```json
 {
@@ -18,6 +20,8 @@ Declare the permissions you use:
 - `native-module` is required for tweak-owned `.node` modules and module
   requests.
 - `native-helper` is required for helper processes.
+- `codex.windows` / `codex.views` are accepted aliases for `codex-windows` /
+  `codex-views`.
 
 Native paths must resolve to an existing file inside the tweak directory.
 Codex++ checks real paths, so symlink escapes are rejected.
