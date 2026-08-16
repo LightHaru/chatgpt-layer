@@ -11,7 +11,7 @@ import { setIntegrity, getIntegrity, canWriteAsarIntegrity } from "../integrity.
 import { writeFuse } from "../fuses.js";
 import { clearQuarantine, prepareCodeSigning, signCodexApp, signatureInfo } from "../codesign.js";
 import { readPlist } from "../plist.js";
-import { writeState } from "../state.js";
+import { readState, writeState } from "../state.js";
 import { installWatcher, type WatcherKind } from "../watcher.js";
 import { CODEX_PLUSPLUS_VERSION } from "../version.js";
 import { formatCliShimResult, installCliShims } from "../cli-shim.js";
@@ -91,21 +91,32 @@ export async function install(opts: Opts = {}): Promise<void> {
   const backupPlist = codex.metaPath ? join(paths.backup, "Info.plist") : null;
   const backupFramework = join(paths.backup, "Electron Framework");
   let appBackupRefreshed = false;
+  const alreadyPatched = hasCodexPlusPlusAsarMarker(codex.asarPath);
   if (pristineAppBackup) {
     appBackupRefreshed = backupUnpatchedApp(codex.appRoot, pristineAppBackup, {
-      hasPatchMarker: hasCodexPlusPlusAsarMarker(codex.asarPath),
+      hasPatchMarker: alreadyPatched,
       step: step.detail,
     });
   }
-  backupOnce(codex.asarPath, backupAsar);
-  if (existsSync(`${codex.asarPath}.unpacked`)) {
-    backupOnce(`${codex.asarPath}.unpacked`, backupAsarUnpacked);
+  // Never snapshot a patched asar as the "original" backup. backupOnce already
+  // refuses to overwrite an existing backup; this also skips creating a first
+  // backup from an already-patched app (which would poison uninstall restore).
+  if (!alreadyPatched) {
+    backupOnce(codex.asarPath, backupAsar);
+    if (existsSync(`${codex.asarPath}.unpacked`)) {
+      backupOnce(`${codex.asarPath}.unpacked`, backupAsarUnpacked);
+    }
   }
   if (codex.metaPath && backupPlist) backupOnce(codex.metaPath, backupPlist);
   if (fuseFlip) backupOnce(codex.electronBinary, backupFramework);
   step(appBackupRefreshed ? "Backup refreshed" : "Backup ready");
 
-  const { headerHash: originalAsarHash } = readHeaderHash(codex.asarPath);
+  const { headerHash: currentAsarHash } = readHeaderHash(codex.asarPath);
+  const prior = readState(paths.stateFile);
+  const originalAsarHash = alreadyPatched
+    ? prior?.originalAsarHash
+      ?? (existsSync(backupAsar) ? readHeaderHash(backupAsar).headerHash : currentAsarHash)
+    : currentAsarHash;
 
   // 2. Stage runtime + loader into the user dir.
   stageAssets(paths.runtime);

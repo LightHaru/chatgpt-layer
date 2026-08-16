@@ -17,6 +17,7 @@ export const WINDOWS_WATCHER_TASK_NAMES = [
 
 export function cleanupWindowsManagedArtifacts(): void {
   if (platform() !== "win32") return;
+  if (process.env.CODEX_PLUSPLUS_DISABLE_WATCHER === "1") return;
 
   const script = buildWindowsManagedCleanupScript({
     localAppData: process.env.LOCALAPPDATA,

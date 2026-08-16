@@ -9,7 +9,7 @@ import { prepareCodeSigning, signCodexApp } from "../codesign.js";
 import { uninstallWatcher } from "../watcher.js";
 import { chownForTargetUser } from "../ownership.js";
 import { cleanupWindowsManagedArtifacts } from "../windows-cleanup.js";
-import { readHeaderHash } from "../asar.js";
+import { readHeaderHash, uncacheAsar } from "../asar.js";
 import { hasCodexPlusPlusAsarMarker, readCodexVersion } from "./install.js";
 import { isCodexRunning } from "../alerts.js";
 import type { CodexInstall } from "../platform.js";
@@ -157,6 +157,7 @@ function restoreFullAppBundle(appRoot: string, backupPath: string): void {
     if (existsSync(appRoot)) renameSync(appRoot, replaced);
     renameSync(staged, appRoot);
     rmSync(replaced, { recursive: true, force: true });
+    uncacheAsar(join(appRoot, "Contents", "Resources", "app.asar"));
   } catch (error) {
     try {
       rmSync(appRoot, { recursive: true, force: true });
@@ -198,6 +199,7 @@ function restorePartialBackup(
   }
 
   cpSync(opts.backupAsar, codex.asarPath);
+  uncacheAsar(codex.asarPath);
   if (existsSync(opts.backupAsarUnpacked)) {
     rmSync(`${codex.asarPath}.unpacked`, { recursive: true, force: true });
     cpSync(opts.backupAsarUnpacked, `${codex.asarPath}.unpacked`, { recursive: true });

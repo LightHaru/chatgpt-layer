@@ -7,21 +7,36 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const packagesDir = join(root, "packages");
 const files = [];
 
-for (const name of readdirSync(packagesDir)) {
-  const testDir = join(packagesDir, name, "test");
+function collectTestFiles(dir) {
+  let entries;
   try {
-    if (!statSync(testDir).isDirectory()) continue;
+    entries = readdirSync(dir);
   } catch {
-    continue;
+    return;
   }
-  for (const file of readdirSync(testDir)) {
-    if (file.endsWith(".test.ts")) files.push(join(testDir, file));
+  for (const name of entries) {
+    const target = join(dir, name);
+    let st;
+    try {
+      st = statSync(target);
+    } catch {
+      continue;
+    }
+    if (st.isDirectory()) {
+      collectTestFiles(target);
+    } else if (name.endsWith(".test.ts")) {
+      files.push(target);
+    }
   }
+}
+
+for (const name of readdirSync(packagesDir)) {
+  collectTestFiles(join(packagesDir, name, "test"));
 }
 
 files.sort();
 if (files.length === 0) {
-  console.error("[test] no packages/*/test/*.test.ts files found");
+  console.error("[test] no packages/*/test/**/*.test.ts files found");
   process.exit(1);
 }
 

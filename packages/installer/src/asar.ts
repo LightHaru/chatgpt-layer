@@ -51,6 +51,7 @@ export async function patchAsar(
   // Snapshot what was unpacked in the ORIGINAL asar before we touch anything;
   // we'll feed an equivalent compact set back to createPackageWithOptions.
   const originalUnpackOptions = collectUnpackOptions(asarPath);
+  asar.uncache(asarPath);
 
   try {
     asar.extractAll(asarPath, extractDir);
@@ -77,6 +78,10 @@ export async function patchAsar(
       try { unlinkSync(stagingPath); } catch { /* best effort */ }
       throw annotatePermError(e, asarPath);
     }
+    // @electron/asar caches Filesystem objects by path. Replacing app.asar
+    // in place must drop that cache or later extractFile/extractAll reads
+    // the old header against the new bytes.
+    asar.uncache(asarPath);
     return readHeaderHash(asarPath);
   } finally {
     try {
@@ -232,4 +237,8 @@ function annotatePermError(e: unknown, target: string): Error {
     return wrapped;
   }
   return err instanceof Error ? err : new Error(String(err));
+}
+
+export function uncacheAsar(asarPath: string): void {
+  asar.uncache(asarPath);
 }
